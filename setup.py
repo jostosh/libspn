@@ -22,16 +22,17 @@ DEFAULT_COMPUTE_CAPABILITIES = ["3.5", "5.2", "6.1"]
 ###############################
 # Specify sources
 ###############################
-SOURCES_CUDA = ['gather_columns_functor_gpu.cu.cc',
-                'scatter_columns_functor_gpu.cu.cc']
-HEADERS_CUDA = ['gather_columns_functor_gpu.cu.h',
-                'scatter_columns_functor_gpu.cu.h']
-SOURCES = ['gather_columns.cc',
-           'gather_columns_functor.cc',
-           'scatter_columns.cc',
-           'scatter_columns_functor.cc']
-HEADERS = ['gather_columns_functor.h',
-           'scatter_columns_functor.h']
+SOURCES_CUDA = [] # ['gather_columns_functor_gpu.cu.cc',
+                #'scatter_columns_functor_gpu.cu.cc']
+HEADERS_CUDA = []# ['gather_columns_functor_gpu.cu.h',
+                #'scatter_columns_functor_gpu.cu.h']
+SOURCES = [#'gather_columns.cc',
+           # 'gather_columns_functor.cc',
+           # 'scatter_columns.cc',
+           # 'scatter_columns_functor.cc',
+           'reduction_logsumexp.cc']
+HEADERS = [] # ['gather_columns_functor.h',
+           # 'scatter_columns_functor.h']
 
 
 ###############################
@@ -107,7 +108,8 @@ class BuildCommand(distutils.command.build.build):
 
         # TensorFlow
         import tensorflow
-        self._tf_includes = tensorflow.sysconfig.get_include()
+        self._tf_includes = tensorflow.sysconfig.get_include() # '/home/jos/spn/tensorflow/' #tensorflow.sysconfig.get_include()
+        self._tf_other_includes = '/home/jos/spn/tensorflow/'
         self._tf_libs = tensorflow.sysconfig.get_lib()
         self._tf_version = tensorflow.__version__
         self._tf_version_major = int(self._tf_version[0])
@@ -141,6 +143,7 @@ class BuildCommand(distutils.command.build.build):
                     '-DGOOGLE_CUDA=1',
                     '--expt-relaxed-constexpr',  # To silence harmless warnings
                     '-I', self._tf_includes,
+                    '-I', self._tf_other_includes,
                     # The below fixes a missing include in TF 1.4rc0
                     '-I', os.path.join(self._tf_includes, 'external', 'nsync', 'public')
                     ] +
@@ -168,6 +171,7 @@ class BuildCommand(distutils.command.build.build):
                     '-I', self._tf_includes,
                     # The below fixes a missing include in TF 1.4rc0
                     '-I', os.path.join(self._tf_includes, 'external', 'nsync', 'public'),
+                    '-I', self._tf_other_includes,
                     '-L', self._cuda_libs,
                     '-L', self._tf_libs] +
                    # Framework library needed for TF>=1.4
