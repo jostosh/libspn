@@ -22,125 +22,16 @@ DEFAULT_COMPUTE_CAPABILITIES = ["3.5", "5.2", "6.1"]
 ###############################
 # Specify sources
 ###############################
-# SOURCES_CUDA = ['gather_columns_functor_gpu.cu.cc',
-#                 'scatter_columns_functor_gpu.cu.cc']
-# HEADERS_CUDA = ['gather_columns_functor_gpu.cu.h',
-#                 'scatter_columns_functor_gpu.cu.h']
-# SOURCES = ['gather_columns.cc',
-#            'gather_columns_functor.cc',
-#            'scatter_columns.cc',
-#            'scatter_columns_functor.cc']#,
-#            #'reduction_logsumexp.cc']
-# HEADERS = ['gather_columns_functor.h',
-#            'scatter_columns_functor.h']
-
-SOURCES_CUDA = []
-HEADERS_CUDA = []
-
-TF_SOURCES = [
-    'tensorflow/core/kernels/reduction_ops_common.cc',
-    'tensorflow/core/kernels/cwise_ops_common.cc'
-]
-
-TF_HEADERS = [
-    'tensorflow/core/kernels/cwise_ops.h',
-    'tensorflow/core/kernels/cwise_ops_common.h',
-    'tensorflow/core/kernels/cwise_ops_gradients.h',
-    'tensorflow/core/kernels/cwise_ops_sycl_common.h',
-    'tensorflow/core/kernels/reduction_ops.h',
-    'tensorflow/core/kernels/reduction_ops_common.h',
-]
-
-EIGEN_HEADERS = [
-    'unsupported/Eigen/CXX11/src/Tensor/TensorMap.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorEvalTo.h',
-    'unsupported/Eigen/CXX11/src/Tensor/Tensor.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorArgMax.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorArgMaxSycl.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorAssign.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorBase.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorBroadcasting.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorChipping.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorConcatenation.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorContraction.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorContractionBlocking.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorContractionCuda.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorContractionMapper.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorContractionSycl.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorContractionThreadPool.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorConversion.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorConvolution.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorConvolutionSycl.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorCostModel.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorCustomOp.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorDevice.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorDeviceCuda.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorDeviceDefault.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorDeviceSycl.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorDeviceThreadPool.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorDimensionList.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorDimensions.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorEvalTo.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorEvaluator.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorExecutor.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorExpr.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorFFT.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorFixedSize.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorForcedEval.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorForwardDeclarations.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorFunctors.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorGenerator.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorGlobalFunctions.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorImagePatch.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorIndexList.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorInflation.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorInitializer.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorIntDiv.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorIO.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorLayoutSwap.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorMacros.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorMap.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorMeta.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorMorphing.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorPadding.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorPatch.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorRandom.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorReduction.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorReductionCuda.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorReductionSycl.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorRef.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorReverse.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorScan.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorShuffling.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorStorage.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorStriding.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorSycl.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorSyclConvertToDeviceExpression.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorSyclExprConstructor.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorSyclExtractAccessor.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorSyclExtractFunctors.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorSyclFunctors.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorSyclLeafCount.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorSyclPlaceHolderExpr.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorSyclRun.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorSyclTuple.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorTrace.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorTraits.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorUInt128.h',
-    'unsupported/Eigen/CXX11/src/Tensor/TensorVolumePatch.h',
-    'Eigen/src/Core/functors/BinaryFunctors.h'
-]
-
-EIGEN_PREFIX = '/home/jos/spn/dot/modules/50_dot-module-gpu/tmp/tensorflow/bazel-tensorflow/external/eigen_archive/'
-
-TF_PREFIX = '/home/jos/spn/dot/modules/50_dot-module-gpu/tmp/tensorflow/'
-
-TF_SOURCES = [TF_PREFIX + s for s in TF_SOURCES]
-TF_HEADERS = [TF_PREFIX + s for s in TF_HEADERS]
-EIGEN_HEADERS = [EIGEN_PREFIX + s for s in EIGEN_HEADERS]
-
-HEADERS = [] + TF_HEADERS + EIGEN_HEADERS
-SOURCES = ['reduction_logsumexp_old.cc'] + TF_SOURCES
+SOURCES_CUDA = ['gather_columns_functor_gpu.cu.cc',
+                'scatter_columns_functor_gpu.cu.cc']
+HEADERS_CUDA = ['gather_columns_functor_gpu.cu.h',
+                'scatter_columns_functor_gpu.cu.h']
+SOURCES = ['gather_columns.cc',
+           'gather_columns_functor.cc',
+           'scatter_columns.cc',
+           'scatter_columns_functor.cc']
+HEADERS = ['gather_columns_functor.h',
+           'scatter_columns_functor.h']
 
 
 ###############################
@@ -216,15 +107,13 @@ class BuildCommand(distutils.command.build.build):
 
         # TensorFlow
         import tensorflow
-        self._tf_includes = tensorflow.sysconfig.get_include() # '/home/jos/spn/tensorflow/' #tensorflow.sysconfig.get_include()
+        self._tf_includes = tensorflow.sysconfig.get_include()
         self._tf_libs = tensorflow.sysconfig.get_lib()
         self._tf_version = tensorflow.__version__
         self._tf_version_major = int(self._tf_version[0])
         self._tf_version_minor = int(self._tf_version[2])
         self._tf_gcc_version = tensorflow.__compiler_version__
         self._tf_gcc_version_major = int(self._tf_gcc_version[0])
-        self._tf_shared_lib = True   # TODO(jos) should be configurable
-        self._tf_include_src = True  # TODO(jos) idem
         print("- Found TensorFlow %s" % self._tf_version)
         print("  gcc version: %s" % self._tf_gcc_version)
         print("  includes: %s" % self._tf_includes)
@@ -250,7 +139,7 @@ class BuildCommand(distutils.command.build.build):
                     obj, source,
                     '-std=c++11', '-x=cu', '-Xcompiler', '-fPIC',
                     '-DGOOGLE_CUDA=1',
-                    '--expt-relaxed-constexpr',  # To silence harmless warnings
+                    '--expt-relaxed-constexpr',  # To silence harmless warnings,
                     '-I', self._tf_includes,
                     # The below fixes a missing include in TF 1.4rc0
                     '-I', os.path.join(self._tf_includes, 'external', 'nsync', 'public')
@@ -289,11 +178,7 @@ class BuildCommand(distutils.command.build.build):
                     if self._downgrade_abi else []) +
                    # --exec-time build option
                    (['-DEXEC_TIME_CALC=1']
-                    if self.exec_time is not None else []) +
-                   (['-ltensorflow']
-                    if self._tf_shared_lib else []) +
-                   (['-I', '/home/jos/spn/dot/modules/50_dot-module-gpu/tmp/tensorflow']
-                    if self._tf_include_src else []))
+                    if self.exec_time is not None else []))
             print(self._col_cmd + ' '.join(cmd) + self._col_clear)
             subprocess.check_call(cmd)  # Used instead of run for 3.4 compatibility
         except subprocess.CalledProcessError:
