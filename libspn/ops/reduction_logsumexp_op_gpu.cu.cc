@@ -21,21 +21,27 @@ limitations under the License.
 
 namespace tensorflow {
 
-REGISTER_KERNEL_BUILDER(
-    Name("LogSumExp").Device(DEVICE_GPU).TypeConstraint<Eigen::half>("T"),
-    LogSumExpOpGPU<Eigen::half>);
-REGISTER_KERNEL_BUILDER(
-    Name("LogSumExp").Device(DEVICE_GPU).TypeConstraint<float>("T"),
-    LogSumExpOpGPU<float>);
-REGISTER_KERNEL_BUILDER(
-    Name("LogSumExp").Device(DEVICE_GPU).TypeConstraint<double>("T"),
-    LogSumExpOpGPU<double>);
-REGISTER_KERNEL_BUILDER(
-    Name("LogSumExp").Device(DEVICE_GPU).TypeConstraint<Eigen::half>("T"),
-    LogSumExpOpGPU<Eigen::half>);
-REGISTER_KERNEL_BUILDER(
-    Name("LogSumExp").Device(DEVICE_GPU).TypeConstraint<float>("T"),
-    LogSumExpOpGPU<float>);
+#define REGISTER_GPU_KERNELS(type)                                             \
+ REGISTER_KERNEL_BUILDER(                                                     \
+     Name("LogSumExp")                                                        \
+         .Device(DEVICE_GPU)                                                  \
+         .TypeConstraint<type>("T")                                           \
+         .TypeConstraint<int32>("Tidx")                                       \
+         .HostMemory("reduction_indices"),                                    \
+     LogSumExpOpGPU<type>);                           \
+ REGISTER_KERNEL_BUILDER(                                                     \
+     Name("LogSumExp")                                                        \
+         .Device(DEVICE_GPU)                                                  \
+         .TypeConstraint<type>("T")                                           \
+         .TypeConstraint<int64>("Tidx")                                       \
+         .HostMemory("reduction_indices"),                                    \
+     LogSumExpOpGPU<type>);
+//TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU_KERNELS);
+//TF_CALL_complex64(REGISTER_GPU_KERNELS);
+//TF_CALL_complex128(REGISTER_GPU_KERNELS);
+REGISTER_GPU_KERNELS(float);
+REGISTER_GPU_KERNELS(double);
+#undef REGISTER_GPU_KERNELS
 
 }  // end namespace tensorflow
 

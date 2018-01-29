@@ -34,7 +34,7 @@ namespace tensorflow {
 namespace {
 //
 template <typename T>
-__global__ void ReplaceInfOrNanWithZero(const T* data,
+__global__ void ReplaceInfOrNanWithZero(T* data,
     const int num_rows, const int num_cols) {
  const int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -75,7 +75,7 @@ struct LogAndAddFunctor {
 
     const T* exponents_;
     const T* max_logits_;
-}
+};
 
 
 template <typename T, typename Op, typename InputIter>
@@ -159,7 +159,7 @@ class LogSumExpOpGPU : public OpKernel {
                                           cub::CountingInputIterator<int>>
           InputIterType2;
 
-      InputIterType2 input_itr(
+      InputIterType2 input_itr2(
           counting_iterator2,
           LogAndAddFunctor<T>(
               reinterpret_cast<const T*>(sum_logits.flat<T>().data()),

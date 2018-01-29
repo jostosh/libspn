@@ -23,13 +23,17 @@ DEFAULT_COMPUTE_CAPABILITIES = ["3.5", "5.2", "6.1"]
 # Specify sources
 ###############################
 SOURCES_CUDA = ['gather_columns_functor_gpu.cu.cc',
-                'scatter_columns_functor_gpu.cu.cc']
+                'scatter_columns_functor_gpu.cu.cc',
+                'reduction_logsumexp_op_gpu.cu.cc']
 HEADERS_CUDA = ['gather_columns_functor_gpu.cu.h',
-                'scatter_columns_functor_gpu.cu.h']
+                'scatter_columns_functor_gpu.cu.h',
+                'reduction_logsumexp_op_gpu.cu.h']
+
 SOURCES = ['gather_columns.cc',
            'gather_columns_functor.cc',
            'scatter_columns.cc',
-           'scatter_columns_functor.cc']
+           'scatter_columns_functor.cc',
+           'reduction_logsumexp_old.cc']
 HEADERS = ['gather_columns_functor.h',
            'scatter_columns_functor.h']
 
@@ -114,6 +118,7 @@ class BuildCommand(distutils.command.build.build):
         self._tf_version_minor = int(self._tf_version[2])
         self._tf_gcc_version = tensorflow.__compiler_version__
         self._tf_gcc_version_major = int(self._tf_gcc_version[0])
+        self._tf_include_src = True
         print("- Found TensorFlow %s" % self._tf_version)
         print("  gcc version: %s" % self._tf_gcc_version)
         print("  includes: %s" % self._tf_includes)
@@ -141,12 +146,16 @@ class BuildCommand(distutils.command.build.build):
                     '-DGOOGLE_CUDA=1',
                     '--expt-relaxed-constexpr',  # To silence harmless warnings,
                     '-I', self._tf_includes,
+                    '-I', '/usr/local',
+                    '-I', '/home/jos/spn/dot/modules/50_dot-module-gpu/tmp/tensorflow/third_party/toolchains/gpus/cuda',
                     # The below fixes a missing include in TF 1.4rc0
                     '-I', os.path.join(self._tf_includes, 'external', 'nsync', 'public')
                     ] +
                    # Downgrade the ABI if system gcc > TF gcc
                    (['-D_GLIBCXX_USE_CXX11_ABI=0']
                     if self._downgrade_abi else []) +
+                  (['-I', '/home/jos/spn/dot/modules/50_dot-module-gpu/tmp/tensorflow']
+                   if self._tf_include_src else []) +
                    # --exec-time build option
                    (['-DEXEC_TIME_CALC=1']
                     if self.exec_time is not None else []) +
@@ -176,6 +185,8 @@ class BuildCommand(distutils.command.build.build):
                    # Downgrade the ABI if system gcc > TF gcc
                    (['-D_GLIBCXX_USE_CXX11_ABI=0']
                     if self._downgrade_abi else []) +
+                  (['-I', '/home/jos/spn/dot/modules/50_dot-module-gpu/tmp/tensorflow']
+                   if self._tf_include_src else []) +
                    # --exec-time build option
                    (['-DEXEC_TIME_CALC=1']
                     if self.exec_time is not None else []))
