@@ -16,8 +16,10 @@ import colorama as col
 import sys
 import scipy.misc
 from functools import partial
+import os
 col.init()
 
+op_module = tf.load_op_library('/home/jos/spn/libspn/libspn/ops/libspn_ops.so')
 
 def print1(str, file):
     if file:
@@ -45,6 +47,9 @@ class Ops:
     def reduce_logsum_pyfunc(params):
         fn = partial(scipy.misc.logsumexp, axis=1, keepdims=True)
         return tf.py_func(fn, [params], params.dtype)
+
+    def reduce_logsum_cust(params):
+        return op_module.log_sum_exp(params, 1, keep_dims=True)
 
 
 class OpTestResult:
@@ -239,7 +244,7 @@ class PerformanceTest:
         # Passthrough
         params = np.random.rand(self.num_param_rows, self.out_size)
         r = self._run_test('2d_passthrough_%sindices' % self.out_size,
-                           [Ops.reduce_logsum, Ops.reduce_logsum_tf] +
+                           [Ops.reduce_logsum, Ops.reduce_logsum_tf, Ops.reduce_logsum_cust] +
                            [Ops.reduce_logsum_pyfunc] if self.without_gpu else [],
                            params)
         results.append(r)
