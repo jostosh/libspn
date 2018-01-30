@@ -37,6 +37,8 @@ namespace tensorflow
 {
 using shape_inference::ShapeHandle;
 using shape_inference::InferenceContext;
+using shape_inference::DimensionHandle;
+using shape_inference::Dimension;
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 typedef Eigen::GpuDevice GPUDevice;
@@ -67,18 +69,16 @@ typedef Eigen::SyclDevice SYCLDevice;
 
 // For operations where the output is a reduction function along some
 // dimensions of the input.
-template <typename Device, class T, typename Tperm>
+template <typename Device, class T>
 class ReductionLogSumExpOp : public OpKernel {
  public:
-  explicit ReductionLogSumExpOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
+  explicit ReductionLogSumExpOp(OpKernelConstruction* ctx)
+    : OpKernel(ctx), keep_dims_(true) {
     const DataType dt = DataTypeToEnum<T>::v();
-    const DataType pt = DataTypeToEnum<Tperm>::v();
-    OP_REQUIRES_OK(ctx, ctx->MatchSignature({dt, pt}, {dt}));
-
-    OP_REQUIRES_OK(ctx, ctx->GetAttr("keep_dims", &keep_dims_));
   }
 
   void Compute(OpKernelContext* ctx) override {
+    const DataType dt = DataTypeToEnum<T>::v();
     const Tensor& data = ctx->input(0);
     const Tensor& axes = ctx->input(1);
     VLOG(1) << "data shape: " << data.shape().DebugString();
@@ -206,125 +206,42 @@ class ReductionLogSumExpOp : public OpKernel {
     ctx->set_output(0, out);
   }
 
- private:
-  // True if the number of dimensions should be maintained.
-  bool keep_dims_;
-
+private:
+    bool keep_dims_;
 };
 
 REGISTER_OP("LogSumExp")
     .Input("input: T")
-    .Input("reduction_indices: Tidx")
     .Output("output: T")
-    .Attr("keep_dims: bool = false")
     .Attr("T: numbertype")
-    .Attr("Tidx: {int32, int64} = DT_INT32")
-    .SetShapeFn(shape_inference::ReductionShape);
+    .SetShapeFn([](InferenceContext* ctx) {
+        ShapeHandle in_shape;
+        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 2, &in_shape));
+        
+        DimensionHandle out_last_dim;
+        out_last_dim = ctx->MakeDim(1);
+
+        ShapeHandle out_shape;
+        TF_RETURN_IF_ERROR(
+            ctx->ReplaceDim(in_shape, -1, out_last_dim, &out_shape));
+        ctx->set_output(0, out_shape);
+
+        return Status::OK();
+    });
+
 
 
 #define REGISTER_CPU_KERNELS(type)                                             \
   REGISTER_KERNEL_BUILDER(                                                     \
       Name("LogSumExp")                                                        \
           .Device(DEVICE_CPU)                                                  \
-          .TypeConstraint<type>("T")                                           \
-          .TypeConstraint<int32>("Tidx"),                                      \
-      ReductionLogSumExpOp<CPUDevice, type, int32>);                           \
-  REGISTER_KERNEL_BUILDER(                                                     \
-      Name("LogSumExp")                                                        \
-          .Device(DEVICE_CPU)                                                  \
-          .TypeConstraint<type>("T")                                           \
-          .TypeConstraint<int64>("Tidx"),                                      \
-      ReductionLogSumExpOp<CPUDevice, type, int64>);
+          .TypeConstraint<type>("T"),                                         \
+      ReductionLogSumExpOp<CPUDevice, type>);
 //TF_CALL_NUMBER_TYPES(REGISTER_CPU_KERNELS);
 REGISTER_CPU_KERNELS(float)
 REGISTER_CPU_KERNELS(double)
 #undef REGISTER_CPU_KERNELS
 
 
-//#if GOOGLE_CUDA
-//
-//#define REGISTER_GPU_KERNELS(type)                                             \
-//  REGISTER_KERNEL_BUILDER(                                                     \
-//      Name("LogSumExp")                                                        \
-//          .Device(DEVICE_GPU)                                                  \
-//          .TypeConstraint<type>("T")                                           \
-//          .TypeConstraint<int32>("Tidx")                                       \
-//          .HostMemory("reduction_indices"),                                    \
-//      ReductionLogSumExpOp<GPUDevice, type, int32>);                           \
-//  REGISTER_KERNEL_BUILDER(                                                     \
-//      Name("LogSumExp")                                                        \
-//          .Device(DEVICE_GPU)                                                  \
-//          .TypeConstraint<type>("T")                                           \
-//          .TypeConstraint<int64>("Tidx")                                       \
-//          .HostMemory("reduction_indices"),                                    \
-//      ReductionLogSumExpOp<GPUDevice, type, int64>);
-////TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU_KERNELS);
-////TF_CALL_complex64(REGISTER_GPU_KERNELS);
-////TF_CALL_complex128(REGISTER_GPU_KERNELS);
-//REGISTER_GPU_KERNELS(float);
-//REGISTER_GPU_KERNELS(double);
-//#undef REGISTER_GPU_KERNELS
-
-// A special GPU kernel for int32.
-// TODO(b/25387198): Also enable int32 in device memory. This kernel
-// registration requires all int32 inputs and outputs to be in host memory.
-//REGISTER_KERNEL_BUILDER(
-//    Name("LogSumExp")
-//        .Device(DEVICE_GPU)
-//        .TypeConstraint<int32>("T")
-//        .TypeConstraint<int32>("Tidx")
-//        .HostMemory("input")
-//        .HostMemory("output")
-//        .HostMemory("reduction_indices"),
-//    ReductionLogSumExpOp<CPUDevice, int32, int32>);
-//REGISTER_KERNEL_BUILDER(
-//    Name("LogSumExp")
-//        .Device(DEVICE_GPU)
-//        .TypeConstraint<int32>("T")
-//        .TypeConstraint<int64>("Tidx")
-//        .HostMemory("input")
-//        .HostMemory("output")
-//        .HostMemory("reduction_indices"),
-//    ReductionLogSumExpOp<CPUDevice, int32, int64>);
-
-//#endif
-//
-//#ifdef TENSORFLOW_USE_SYCL
-//#define REGISTER_SYCL_KERNELS(type)                                        \
-//  REGISTER_KERNEL_BUILDER(Name("LogSumExp")                                \
-//                              .Device(DEVICE_SYCL)                         \
-//                              .TypeConstraint<type>("T")                   \
-//                              .TypeConstraint<int32>("Tidx")               \
-//                              .HostMemory("reduction_indices"),            \
-//                          ReductionLogSumExpOp<SYCLDevice, type, int32>);  \
-//  REGISTER_KERNEL_BUILDER(Name("LogSumExp")                                \
-//                              .Device(DEVICE_SYCL)                         \
-//                              .TypeConstraint<type>("T")                   \
-//                              .TypeConstraint<int64>("Tidx")               \
-//                              .HostMemory("reduction_indices"),            \
-//                          ReductionLogSumExpOp<SYCLDevice, type, int64>);
-//REGISTER_SYCL_KERNELS(float);
-//REGISTER_SYCL_KERNELS(double);
-//
-//REGISTER_KERNEL_BUILDER(
-//    Name("LogSumExp")
-//        .Device(DEVICE_SYCL)
-//        .TypeConstraint<int32>("T")
-//        .TypeConstraint<int32>("Tidx")
-//        .HostMemory("input")
-//        .HostMemory("output")
-//        .HostMemory("reduction_indices"),
-//    ReductionLogSumExpOp<CPUDevice, int32, int32>);
-//REGISTER_KERNEL_BUILDER(
-//    Name("LogSumExp")
-//        .Device(DEVICE_SYCL)
-//        .TypeConstraint<int32>("T")
-//        .TypeConstraint<int64>("Tidx")
-//        .HostMemory("input")
-//        .HostMemory("output")
-//        .HostMemory("reduction_indices"),
-//    ReductionLogSumExpOp<CPUDevice, int32, int64>);
-//#undef REGISTER_SYCL_KERNELS
-//#endif  // TENSORFLOW_USE_SYCL
 
 }  // namespace tensorflow

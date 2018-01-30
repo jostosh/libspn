@@ -49,7 +49,7 @@ class Ops:
         return tf.py_func(fn, [params], params.dtype)
 
     def reduce_logsum_cust(params):
-        return op_module.log_sum_exp(params, 1, keep_dims=True)
+        return op_module.log_sum_exp(params)
 
 
 class OpTestResult:
@@ -129,7 +129,7 @@ class PerformanceTest:
         # Preparations
         op_name = op_fun.__name__
         device_name = '/gpu:0' if on_gpu else '/cpu:0'
-        params = np.asarray(params, dtype=self.dtype.as_numpy_dtype())
+        params = np.asarray(params, dtype='float32') #self.dtype.as_numpy_dtype())
         # Print
         print2("--> %s: on_gpu=%s, params_shape=%s"
                % (op_name, on_gpu, params.shape),
@@ -244,8 +244,8 @@ class PerformanceTest:
         # Passthrough
         params = np.random.rand(self.num_param_rows, self.out_size)
         r = self._run_test('2d_passthrough_%sindices' % self.out_size,
-                           [Ops.reduce_logsum, Ops.reduce_logsum_tf, Ops.reduce_logsum_cust] +
-                           [Ops.reduce_logsum_pyfunc] if self.without_gpu else [],
+                           [Ops.reduce_logsum_cust, Ops.reduce_logsum, Ops.reduce_logsum_tf] +
+                           ([Ops.reduce_logsum_pyfunc] if self.without_gpu else []),
                            params)
         results.append(r)
 
@@ -265,7 +265,7 @@ class PerformanceTest:
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num-param-rows', default=200, type=int,
+    parser.add_argument('--num-param-rows', default=100, type=int,
                         help="Num of rows of params")
     parser.add_argument('--num-param-cols', default=50, type=int,
                         help="Num of cols of params")
@@ -302,6 +302,8 @@ def main():
                             args.without_cpu, args.without_gpu,
                             args.log_devices, f)
         t.run()
+    except Exception as e:
+        print("Error: ", e.message())
     finally:
         if f is not None:
             f.close()

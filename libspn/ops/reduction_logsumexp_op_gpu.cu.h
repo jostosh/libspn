@@ -36,15 +36,20 @@ namespace {
 template <typename T>
 __global__ void ReplaceInfOrNanWithZero(T* data,
     const int num_rows, const int num_cols) {
- const int tid = blockIdx.x * blockDim.x + threadIdx.x;
-
- const int row = tid / num_cols;
- const int col = tid % num_cols;
-
- if (row < num_rows && col < num_cols) {
-     data[tid] = (isfinite(data[tid])) ? data[tid] : 0.0;
- }
+  const int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  data[tid] = (isfinite(data[tid])) ? data[tid] : 0.0;
 }
+
+template <typename T>
+__global__ void SubtractAndExpKernel(
+    CudaLaunchConfig &cfg,
+    T* left,
+    const T* right,
+    const int num_cols) {
+  const int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  left[tid] = exp(left[tid] - ldg(right + tid / num_cols));
+}
+
 
 template <typename T>
 struct SubtractAndExpFunctor {
@@ -52,8 +57,10 @@ struct SubtractAndExpFunctor {
                                             const T* max_logits,
                                             const int num_cols)
       : logits_(logits), max_logits_(max_logits), num_cols_(num_cols) {}
-
   __host__ __device__ T operator()(const int gid) const {
+    // Assuming input is 2D [(num_rows_) x num_cols_], we can find the
+    // index of the corresponding max logit by dividing the offset given
+    // by gid by num_cols_
     return exp(logits_[gid] - ldg(max_logits_ + gid / num_cols_));
   }
 
@@ -64,18 +71,13 @@ struct SubtractAndExpFunctor {
 
 
 template <typename T>
-struct LogAndAddFunctor {
-    __host__ __device__ LogAndAddFunctor(const T* exponents,
-                                         const T* max_logits)
-     : exponents_(exponents), max_logits_(max_logits) {}
-
-    __host__ __device__ T operator()(const int gid) const {
-        return log(exponents_[gid]) + max_logits_[gid];
+__global__ void LogAndAddKernel(const T* left, const T* right, T* out,
+        const int numel) {
+    CUDA_1D_KERNEL_LOOP(x, numel)
+    {
+      //out[x] = log(ldg(left + x)) + ldg(right + x);
     }
-
-    const T* exponents_;
-    const T* max_logits_;
-};
+}
 
 
 template <typename T, typename Op, typename InputIter>
@@ -95,84 +97,70 @@ void DoRowReduction(OpKernelContext* context, T* output, InputIter input,
 template <typename T>
 class LogSumExpOpGPU : public OpKernel {
  public:
-  explicit LogSumExpOpGPU(OpKernelConstruction* context) : OpKernel(context) {
-    log_ = StringPiece(type_string()).starts_with("Log");
-  }
+  explicit LogSumExpOpGPU(OpKernelConstruction* context) : OpKernel(context) {}
 
   void Compute(OpKernelContext* context) override {
     const Tensor& logits_in_ = context->input(0);
     auto logits_in = logits_in_.matrix<T>();
-    const int rows = logits_in.dimension(0);
-    const int cols = logits_in.dimension(1);
+    const int rows = logits_in_.shape().dim_size(0);
+    const int cols = logits_in_.shape().dim_size(1);
     OP_REQUIRES(context, TensorShapeUtils::IsMatrix(logits_in_.shape()),
                 errors::InvalidArgument("logits must be 2-dimensional"));
-    Tensor* softmax_out = nullptr;
     // TODO need to set output shape differently
     TensorShape out_shape(logits_in_.shape());
     out_shape.set_dim(1, 1);
-    OP_REQUIRES_OK(context, context->forward_input_or_allocate_output(
-                                {0}, 0, out_shape, &softmax_out));
 
     const cudaStream_t& cu_stream = GetCudaStream(context);
+    Tensor *out;
+    context->allocate_output(0, out_shape, &out);
     if (logits_in_.NumElements() > 0) {
+
+      // Three tensors
       Tensor max_logits;
       Tensor sum_probs;
-      Tensor sum_logits;
+
       OP_REQUIRES_OK(context,
                      context->allocate_temp(DataTypeToEnum<T>::value,
-                                            softmax_out->shape(), &max_logits));
+                                            out_shape, &max_logits));
       OP_REQUIRES_OK(context,
                      context->allocate_temp(DataTypeToEnum<T>::value,
-                                            softmax_out->shape(), &sum_probs));
-      OP_REQUIRES_OK(context,
-                     context->allocate_temp(DataTypeToEnum<T>::value,
-                                            softmax_out->shape(), &sum_logits));
+                                            out_shape, &sum_probs));
 
       DoRowReduction<T, cub::Max, const T*>(
           context, const_cast<T*>(max_logits.flat<T>().data()),
           reinterpret_cast<const T*>(logits_in_.flat<T>().data()), rows, cols);
+      //
+      // // ReplaceInfOrNanWithZero<<<numBlocks, numThreads, 0, cu_stream>>>(
+      // //     const_cast<T*>(max_logits.flat<T>().data()), rows, cols);
 
-      const int numThreads = 128;
-      const int numBlocks = Eigen::divup(rows * cols, numThreads);
-
-      ReplaceInfOrNanWithZero<<<numBlocks, numThreads, 0, cu_stream>>>(
-          const_cast<T*>(max_logits.flat<T>().data()), rows, cols);
+      const GPUDevice &d = context->eigen_device<GPUDevice>();
+      CudaLaunchConfig config = GetCudaLaunchConfig(logits_in_.NumElements(), d);
 
       cub::CountingInputIterator<int> counting_iterator(0);
-      typedef cub::TransformInputIterator<T, SubtractAndExpFunctor<T>,
-                                          cub::CountingInputIterator<int>>
-          InputIterType;
+            typedef cub::TransformInputIterator<T, SubtractAndExpFunctor<T>,
+                                                cub::CountingInputIterator<int>>
+                InputIterType;
 
-      InputIterType input_itr(
-          counting_iterator,
-          SubtractAndExpFunctor<T>(
-              reinterpret_cast<const T*>(logits_in_.flat<T>().data()),
-              reinterpret_cast<const T*>(max_logits.flat<T>().data()), cols));
+            InputIterType input_itr(
+                counting_iterator,
+                SubtractAndExpFunctor<T>(
+                    reinterpret_cast<const T*>(logits_in_.flat<T>().data()),
+                    reinterpret_cast<const T*>(max_logits.flat<T>().data()), cols));
 
-      DoRowReduction<T, cub::Sum, const T*>(
-          context, const_cast<T*>(sum_logits.flat<T>().data()),
-          reinterpret_cast<const T*>(logits_in_.flat<T>().data(), rows, cols)
-      );
+      DoRowReduction<T, cub::Sum, InputIterType>(
+        context, const_cast<T*>(sum_probs.flat<T>().data()), input_itr, rows,
+        cols);
 
-      cub::CountingInputIterator<int> counting_iterator2(0);
-      typedef cub::TransformInputIterator<T, LogAndAddFunctor<T>,
-                                          cub::CountingInputIterator<int>>
-          InputIterType2;
-
-      InputIterType2 input_itr2(
-          counting_iterator2,
-          LogAndAddFunctor<T>(
-              reinterpret_cast<const T*>(sum_logits.flat<T>().data()),
-              reinterpret_cast<const T*>(max_logits.flat<T>().data())));
-
-      if (!softmax_out->copyFrom(sum_logits, softmax_out->shape())) {
-    	  context->SetStatus(errors::Internal("Error during reduction copy."));
-      }
+      // So problem lies here ...
+      config = GetCudaLaunchConfig(out->NumElements(), d);
+      LogAndAddKernel<<<config.block_count, config.thread_per_block, 0, cu_stream>>>(
+            reinterpret_cast<const T*>(sum_probs.flat<T>().data()),
+            reinterpret_cast<const T*>(max_logits.flat<T>().data()),
+            const_cast<T*>(out->flat<T>().data()),
+            rows);
     }
   }
 
- private:
-  bool log_;
 };
 
 }  // end namespace tensorflow
