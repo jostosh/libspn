@@ -71,11 +71,11 @@ struct SubtractAndExpFunctor {
 
 
 template <typename T>
-__global__ void LogAndAddKernel(const T* left, const T* right, T* out,
-        const int numel) {
-    CUDA_1D_KERNEL_LOOP(x, numel)
+__global__ void LogAndAddKernel(CudaLaunchConfig clc, const T* left,
+  const T* right, T* out, const int numel) {
+    CUDA_1D_KERNEL_LOOP(x, clc.virtual_thread_count)
     {
-      //out[x] = log(ldg(left + x)) + ldg(right + x);
+      out[x] = log(ldg(left + x)) + ldg(right + x);
     }
 }
 
@@ -154,6 +154,7 @@ class LogSumExpOpGPU : public OpKernel {
       // So problem lies here ...
       config = GetCudaLaunchConfig(out->NumElements(), d);
       LogAndAddKernel<<<config.block_count, config.thread_per_block, 0, cu_stream>>>(
+            config,
             reinterpret_cast<const T*>(sum_probs.flat<T>().data()),
             reinterpret_cast<const T*>(max_logits.flat<T>().data()),
             const_cast<T*>(out->flat<T>().data()),
