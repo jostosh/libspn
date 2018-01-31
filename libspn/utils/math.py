@@ -274,11 +274,11 @@ def reduce_log_sum(log_input, name=None):
         dimension corresponds to the first dimension of ``log_input``.
     """
     with tf.name_scope(name, "reduce_log_sum", [log_input]):
-        log_max = tf.reduce_max(log_input, 1, keep_dims=True)
+        log_max = tf.reduce_max(log_input, -1, keep_dims=True)
         # Compute the value assuming at least one input is not -inf
         log_rebased = tf.subtract(log_input, log_max)
         out_normal = log_max + tf.log(tf.reduce_sum(tf.exp(log_rebased),
-                                                    1, keep_dims=True))
+                                                    -1, keep_dims=True))
         # Check if all input values in a row are -inf (all non-log inputs are 0)
         # and produce output for that case
         # We use float('inf') for compatibility with Python<3.5

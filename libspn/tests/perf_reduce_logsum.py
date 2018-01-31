@@ -42,14 +42,14 @@ class Ops:
         return spn.utils.math.reduce_log_sum(params)
 
     def reduce_logsum_tf(params):
-        return tf.reduce_logsumexp(params, axis=1, keep_dims=True)
+        return tf.reduce_logsumexp(params, axis=-1, keep_dims=True)
 
     def reduce_logsum_pyfunc(params):
-        fn = partial(scipy.misc.logsumexp, axis=1, keepdims=True)
+        fn = partial(scipy.misc.logsumexp, axis=-1, keepdims=True)
         return tf.py_func(fn, [params], params.dtype)
 
     def reduce_logsum_cust(params):
-        return op_module.log_sum_exp(params)
+        return op_module.reduce_logsumexp(params)
 
 
 class OpTestResult:
@@ -75,8 +75,8 @@ class TestResults:
 
     def print(self, file):
         def get_header(dev):
-            return ("%3s %14s %5s: %5s %11s %15s %14s %10s" %
-                    (dev, 'op', 'dt', 'size', 'setup_time',
+            return ("%3s %14s %5s %11s %15s %14s %10s" %
+                    (dev, 'op', 'size', 'setup_time',
                      'first_run_time', 'rest_run_time', 'correct'))
 
         def get_res(res):
@@ -101,11 +101,12 @@ class TestResults:
 
 class PerformanceTest:
 
-    def __init__(self, num_param_rows, num_param_cols, out_size,
+    def __init__(self, num_param_rows, num_param_cols, num_param_planes, out_size,
                  num_ops, num_runs, dtype,
                  without_cpu, without_gpu, log_devs, file):
         self.num_param_rows = num_param_rows
         self.num_param_cols = num_param_cols
+        self.num_param_planes = num_param_planes
         self.out_size = out_size
         self.num_ops = num_ops
         self.num_runs = num_runs
@@ -135,7 +136,7 @@ class PerformanceTest:
                % (op_name, on_gpu, params.shape),
                self.file)
         # Compute true output with numpy
-        true_out = scipy.misc.logsumexp(params, axis=1, keepdims=True)
+        true_out = scipy.misc.logsumexp(params, axis=-1, keepdims=True)
         # Create graph
         tf.reset_default_graph()
         with tf.device(device_name):
@@ -189,46 +190,7 @@ class PerformanceTest:
                 gpu_results.append(
                     self._run_op_test(op_fun, params, on_gpu=True))
         return TestResults(test_name, cpu_results, gpu_results)
-    #
-    # def _run_1d(self):
-    #     """Run all 1D tests."""
-    #     results = []
-    #
-    #     # 1 index
-    #     params = np.random.rand(1)
-    #     indices = np.random.randint(low=0, high=self.out_size, size=1)
-    #     r = self._run_test('1d_1index',
-    #                        [Ops.custom, Ops.pad_1d, Ops.gather_1d],
-    #                        params, indices, self.out_size)
-    #     results.append(r)
-    #
-    #     # Passthrough
-    #     params = np.random.rand(self.out_size)
-    #     indices = range(self.out_size)
-    #     r = self._run_test('1d_passthrough_%sindices' % self.out_size,
-    #                        [Ops.custom, Ops.noop, Ops.gather_1d],
-    #                        params, indices, self.out_size)
-    #     results.append(r)
-    #
-    #     # Reverse params
-    #     params = np.random.rand(self.out_size)
-    #     indices = range(self.out_size - 1, -1, -1)
-    #     r = self._run_test('1d_reverse_%sindices' % self.out_size,
-    #                        [Ops.custom, Ops.gather_1d],
-    #                        params, indices, self.out_size)
-    #     results.append(r)
-    #
-    #     # Random
-    #     params = np.random.rand(self.num_param_cols)
-    #     # Random, integers without repetitions
-    #     indices = np.random.choice(self.out_size, size=self.num_param_cols,
-    #                                replace=False)
-    #     r = self._run_test('1d_random_%dindices' % self.num_param_cols,
-    #                        [Ops.custom, Ops.gather_1d],
-    #                        params, indices, self.out_size)
-    #     results.append(r)
-    #
-    #     return results
+
 
     def _run_2d(self):
         """Run all 2D tests."""
@@ -242,8 +204,8 @@ class PerformanceTest:
         # results.append(r)
 
         # Passthrough
-        params = np.random.rand(self.num_param_rows, self.out_size)
-        r = self._run_test('2d_passthrough_%sindices' % self.out_size,
+        params = np.random.rand(self.num_param_rows, self.num_param_cols)
+        r = self._run_test('2d_passthrough',
                            [Ops.reduce_logsum_cust, Ops.reduce_logsum, Ops.reduce_logsum_tf] +
                            ([Ops.reduce_logsum_pyfunc] if self.without_gpu else []),
                            params)
@@ -251,11 +213,29 @@ class PerformanceTest:
 
         return results
 
+    def _run_3d(self):
+        """Run all 3D tests."""
+        results = []
+
+        # Passthrough
+        params = np.random.rand(
+            self.num_param_planes, self.num_param_rows, self.num_param_cols
+        )
+        r = self._run_test('3d_passthrough',
+                           [Ops.reduce_logsum_cust, Ops.reduce_logsum, Ops.reduce_logsum_tf] +
+                           ([Ops.reduce_logsum_pyfunc] if self.without_gpu else []),
+                           params)
+        results.append(r)
+
+        return results
+
+
     def run(self):
         """Run all tests."""
         print1("Running tests:", self.file)
         results = []
         results += self._run_2d()
+        results += self._run_3d()
 
         # Print results
         for res in results:
@@ -265,10 +245,12 @@ class PerformanceTest:
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num-param-rows', default=100, type=int,
+    parser.add_argument('--num-param-rows', default=10000, type=int,
                         help="Num of rows of params")
-    parser.add_argument('--num-param-cols', default=50, type=int,
+    parser.add_argument('--num-param-cols', default=1000, type=int,
                         help="Num of cols of params")
+    parser.add_argument('--num-param-planes', default=10, type=int,
+                        help='Num of planes of params')
     parser.add_argument('--out-size', default=100, type=int,
                         help="Size of the output")
     parser.add_argument('--num-ops', default=200, type=int,
@@ -297,13 +279,14 @@ def main():
 
     try:
         t = PerformanceTest(args.num_param_rows, args.num_param_cols,
+                            args.num_param_planes,
                             args.out_size, args.num_ops,
                             args.num_runs, dtype,
                             args.without_cpu, args.without_gpu,
                             args.log_devices, f)
         t.run()
     except Exception as e:
-        print("Error: ", e.message())
+        print("Error: ", e)
     finally:
         if f is not None:
             f.close()

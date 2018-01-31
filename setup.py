@@ -18,44 +18,6 @@ if sys.version_info < (3, 4):
 ###############################
 DEFAULT_COMPUTE_CAPABILITIES = ["3.5", "5.2", "6.1"]
 
-
-
-TF_SOURCES = [
-    'tensorflow/core/kernels/reduction_ops_common.cc',
-    'tensorflow/core/kernels/cwise_ops_common.cc',
-]
-
-TF_HEADERS = [
-    # 'tensorflow/core/kernels/cwise_ops.h',
-    # 'tensorflow/core/kernels/cwise_ops_common.h',
-    # 'tensorflow/core/kernels/cwise_ops_gradients.h',
-    # 'tensorflow/core/kernels/cwise_ops_sycl_common.h',
-    # 'tensorflow/core/kernels/reduction_ops.h',
-    # 'tensorflow/core/kernels/reduction_ops_common.h',
-]
-
-TF_CUDA_HEADERS = [
-    # 'tensorflow/core/kernels/reduction_gpu_kernels.cu.h',
-]
-
-TF_CUDA_SOURCES = [
-    # 'tensorflow/core/kernels/reduction_ops_gpu_float.cu.cc',
-    # 'tensorflow/core/kernels/reduction_ops_gpu_double.cu.cc'
-]
-
-TF_PREFIX = '/home/jos/spn/dot/modules/50_dot-module-gpu/tmp/tensorflow/'
-
-
-def add_prefix(l, prefix):
-    return [prefix + elem for elem in l]
-
-TF_SOURCES = add_prefix(TF_SOURCES, TF_PREFIX)
-TF_HEADERS = add_prefix(TF_HEADERS, TF_PREFIX)
-
-TF_CUDA_SOURCES = add_prefix(TF_CUDA_SOURCES, TF_PREFIX)
-TF_CUDA_HEADERS = add_prefix(TF_CUDA_HEADERS, TF_PREFIX)
-
-
 ###############################
 # Specify sources
 ###############################
@@ -69,8 +31,7 @@ HEADERS_CUDA = ['gather_columns_functor_gpu.cu.h',
 SOURCES = ['gather_columns.cc',
            'gather_columns_functor.cc',
            'scatter_columns.cc',
-           'scatter_columns_functor.cc',
-           'reduction_logsumexp_old.cc'] + TF_SOURCES
+           'scatter_columns_functor.cc']
 HEADERS = ['gather_columns_functor.h',
            'scatter_columns_functor.h']
 
@@ -156,6 +117,10 @@ class BuildCommand(distutils.command.build.build):
         self._tf_gcc_version = tensorflow.__compiler_version__
         self._tf_gcc_version_major = int(self._tf_gcc_version[0])
         self._tf_include_src = True
+        self._tf_source_dir = os.path.join(
+            os.environ['DOT_DIR'], 'modules', '50_dot-module-gpu',
+            'tmp', 'tensorflow'
+        )
         print("- Found TensorFlow %s" % self._tf_version)
         print("  gcc version: %s" % self._tf_gcc_version)
         print("  includes: %s" % self._tf_includes)
@@ -185,15 +150,13 @@ class BuildCommand(distutils.command.build.build):
                     '-I', self._tf_includes,
                     # TODO(jos) I also added this, since my system was unable to compile cuda code otherwise...
                     '-I', '/usr/local',
-                    # For below, see https://github.com/tensorflow/tensorflow/issues/15002
-                    '-I', '/home/jos/spn/dot/modules/50_dot-module-gpu/tmp/tensorflow/third_party/toolchains/gpus/cuda',
                     # The below fixes a missing include in TF 1.4rc0
-                    '-I', os.path.join(self._tf_includes, 'external', 'nsync', 'public')
+                    '-I', os.path.join(self._tf_includes, 'external', 'nsync', 'public'),
                     ] +
                    # Downgrade the ABI if system gcc > TF gcc
                    (['-D_GLIBCXX_USE_CXX11_ABI=0']
                     if self._downgrade_abi else []) +
-                  (['-I', '/home/jos/spn/dot/modules/50_dot-module-gpu/tmp/tensorflow']
+                  (['-I', self._tf_source_dir]
                    if self._tf_include_src else []) +
                    # --exec-time build option
                    (['-DEXEC_TIME_CALC=1']
@@ -224,7 +187,7 @@ class BuildCommand(distutils.command.build.build):
                    # Downgrade the ABI if system gcc > TF gcc
                    (['-D_GLIBCXX_USE_CXX11_ABI=0']
                     if self._downgrade_abi else []) +
-                  (['-I', '/home/jos/spn/dot/modules/50_dot-module-gpu/tmp/tensorflow']
+                  (['-I', self._tf_source_dir]
                    if self._tf_include_src else []) +
                    # --exec-time build option
                    (['-DEXEC_TIME_CALC=1']
