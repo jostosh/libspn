@@ -32,6 +32,11 @@ def print2(str, file):
         print(str, file=file)
     print(col.Fore.BLUE + str + col.Style.RESET_ALL)
 
+def print3(str, file):
+    if file:
+        print(str, file=file)
+    print(col.Fore.RED + str + col.Style.RESET_ALL)
+
 
 class Ops:
 
@@ -42,7 +47,7 @@ class Ops:
         return spn.utils.math.reduce_log_sum(params)
 
     def reduce_logsum_tf(params):
-        return tf.reduce_logsumexp(params, axis=-1, keep_dims=True)
+        return tf.reduce_logsumexp(params, axis=-1, keepdims=True)
 
     def reduce_logsum_pyfunc(params):
         fn = partial(scipy.misc.logsumexp, axis=-1, keepdims=True)
@@ -101,12 +106,12 @@ class TestResults:
 
 class PerformanceTest:
 
-    def __init__(self, num_param_rows, num_param_cols, num_param_planes, out_size,
+    def __init__(self, num_param_rows, num_param_cols, num_param_slices, out_size,
                  num_ops, num_runs, dtype,
                  without_cpu, without_gpu, log_devs, file):
         self.num_param_rows = num_param_rows
         self.num_param_cols = num_param_cols
-        self.num_param_planes = num_param_planes
+        self.num_param_slices = num_param_slices
         self.out_size = out_size
         self.num_ops = num_ops
         self.num_runs = num_runs
@@ -219,7 +224,7 @@ class PerformanceTest:
 
         # Passthrough
         params = np.random.rand(
-            self.num_param_planes, self.num_param_rows, self.num_param_cols
+            self.num_param_slices, self.num_param_rows, self.num_param_cols
         )
         r = self._run_test('3d_passthrough',
                            [Ops.reduce_logsum_cust, Ops.reduce_logsum, Ops.reduce_logsum_tf] +
@@ -249,13 +254,13 @@ def main():
                         help="Num of rows of params")
     parser.add_argument('--num-param-cols', default=1000, type=int,
                         help="Num of cols of params")
-    parser.add_argument('--num-param-planes', default=10, type=int,
+    parser.add_argument('--num-param-slices', default=10, type=int,
                         help='Num of planes of params')
     parser.add_argument('--out-size', default=100, type=int,
                         help="Size of the output")
     parser.add_argument('--num-ops', default=200, type=int,
                         help="Num of ops used for tests")
-    parser.add_argument('--num-runs', default=10, type=int,
+    parser.add_argument('--num-runs', default=50, type=int,
                         help="Number of times each test is run")
     parser.add_argument('--log-devices', action='store_true',
                         help="Log on which device op is run. Affects run time!")
@@ -279,7 +284,7 @@ def main():
 
     try:
         t = PerformanceTest(args.num_param_rows, args.num_param_cols,
-                            args.num_param_planes,
+                            args.num_param_slices,
                             args.out_size, args.num_ops,
                             args.num_runs, dtype,
                             args.without_cpu, args.without_gpu,

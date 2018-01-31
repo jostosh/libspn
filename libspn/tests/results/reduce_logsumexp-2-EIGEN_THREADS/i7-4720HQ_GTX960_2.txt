@@ -1,0 +1,45 @@
+Params:
+- num_param_rows=10000
+- num_param_cols=1000
+- out_size=100
+- num_ops=200
+- num_runs=50
+- dtype=<dtype: 'float32'>
+
+Running tests:
+--> reduce_logsum_cust: on_gpu=False, params_shape=(10000, 1000)
+--> reduce_logsum_cust: on_gpu=True, params_shape=(10000, 1000)
+--> reduce_logsum: on_gpu=False, params_shape=(10000, 1000)
+--> reduce_logsum: on_gpu=True, params_shape=(10000, 1000)
+--> reduce_logsum_tf: on_gpu=False, params_shape=(10000, 1000)
+--> reduce_logsum_tf: on_gpu=True, params_shape=(10000, 1000)
+--> reduce_logsum_cust: on_gpu=False, params_shape=(10, 10000, 1000)
+--> reduce_logsum_cust: on_gpu=True, params_shape=(10, 10000, 1000)
+--> reduce_logsum: on_gpu=False, params_shape=(10, 10000, 1000)
+--> reduce_logsum: on_gpu=True, params_shape=(10, 10000, 1000)
+--> reduce_logsum_tf: on_gpu=False, params_shape=(10, 10000, 1000)
+--> reduce_logsum_tf: on_gpu=True, params_shape=(10, 10000, 1000)
+
+-----------------------
+2d_passthrough
+-----------------------
+CPU             op  size  setup_time  first_run_time  rest_run_time    correct
+     reduce_logsum:  3399     1600.10          344.09          41.01       True
+reduce_logsum_cust:   799      337.66          594.36         548.31       True
+  reduce_logsum_tf:  2999     1489.27          390.19          40.76       True
+GPU             op  size  setup_time  first_run_time  rest_run_time    correct
+     reduce_logsum:  3399     1674.46          308.46          18.35       True
+reduce_logsum_cust:   799      335.36           67.68          15.95       True
+  reduce_logsum_tf:  2999     1408.78          348.04          18.50       True
+
+-----------------------
+3d_passthrough
+-----------------------
+CPU             op  size  setup_time  first_run_time  rest_run_time    correct
+     reduce_logsum:  3399     1624.76          718.39         424.46       True
+reduce_logsum_cust:   799      454.05         5560.96        5717.25       True
+  reduce_logsum_tf:  2999     1476.37          711.31         394.47       True
+GPU             op  size  setup_time  first_run_time  rest_run_time    correct
+     reduce_logsum:  3399     1666.96          511.31         174.43       True
+reduce_logsum_cust:   799      340.02          206.59         153.86       True
+  reduce_logsum_tf:  2999     1468.37          500.33         174.81       True

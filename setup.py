@@ -31,9 +31,11 @@ HEADERS_CUDA = ['gather_columns_functor_gpu.cu.h',
 SOURCES = ['gather_columns.cc',
            'gather_columns_functor.cc',
            'scatter_columns.cc',
-           'scatter_columns_functor.cc']
+           'scatter_columns_functor.cc',
+           'reduction_logsumexp.cc']
 HEADERS = ['gather_columns_functor.h',
-           'scatter_columns_functor.h']
+           'scatter_columns_functor.h',
+           'reduction_logsumexp_functor.h']
 
 
 ###############################
@@ -150,6 +152,7 @@ class BuildCommand(distutils.command.build.build):
                     '-I', self._tf_includes,
                     # TODO(jos) I also added this, since my system was unable to compile cuda code otherwise...
                     '-I', '/usr/local',
+                    '-I', '/usr/local/cuda/include',
                     # The below fixes a missing include in TF 1.4rc0
                     '-I', os.path.join(self._tf_includes, 'external', 'nsync', 'public'),
                     ] +
@@ -180,6 +183,7 @@ class BuildCommand(distutils.command.build.build):
                     # The below fixes a missing include in TF 1.4rc0
                     '-I', os.path.join(self._tf_includes, 'external', 'nsync', 'public'),
                     '-L', self._cuda_libs,
+                    '-I', '/usr/local/cuda/include',
                     '-L', self._tf_libs] +
                    # Framework library needed for TF>=1.4
                    (['-ltensorflow_framework']

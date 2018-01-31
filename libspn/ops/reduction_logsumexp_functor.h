@@ -1,9 +1,7 @@
 #ifndef TENSORFLOW_USEROPS_REDUCTION_LOGSUMEXP_FUNCTOR_H_
 #define TENSORFLOW_USEROPS_REDUCTION_LOGSUMEXP_FUNCTOR_H_
 
-#if GOOGLE_CUDA
-#define EIGEN_USE_GPU
-#endif
+#define EIGEN_USE_THREADS
 
 #include "tensorflow/core/framework/tensor_types.h"
 #include "tensorflow/core/framework/type_traits.h"
@@ -31,15 +29,13 @@ namespace tensorflow
         typename TTypes<T>::Matrix &out);
     };
 
-    // This should work for both GPU and CPU devices
+    // This should work for both GPU and CPU devices, but only CPU is used.
     // Heavily inspired by the implementation of the softmax functors as in
     // tensorflow/core/kernels/softmax_op_functor.h
     template <typename Device, typename T>
     struct LogsumexpEigenImpl {
       static void Compute(const Device& d,
                      typename TTypes<T>::ConstMatrix &logits,
-                     typename TTypes<T>::Matrix &shifted_logits,
-                     typename TTypes<T>::Matrix &max_logits,
                      typename TTypes<T>::Matrix &out)
       {
         const int rowDim = 0;
@@ -59,14 +55,22 @@ namespace tensorflow
             Eigen::IndexList<Eigen::type2index<1>, int> one_x_cols;
             one_x_cols.set(1, cols);
         #endif
-        max_logits.device(d) = logits.maximum(along_cols)
-                                     .eval()
-                                     .reshape(rows_x_one);
-        out.device(d) = (logits - max_logits.broadcast(one_x_cols))
-            .exp()
-            .sum(along_cols)
-            .log()
-            .reshape(rows_x_one) + max_logits;
+        
+        // First we take the maximum per row
+        auto max_logits = logits.maximum(along_cols)
+                                .reshape(rows_x_one);
+
+        // Set infinites to zero
+        auto max_logits_ = max_logits.isinf().select(
+          max_logits.constant(static_cast<T>(0)), max_logits);
+
+        // Then we compute f(x) = log(sum(exp(x - mx))) + mx, where mx = max(x).
+        // Sums are taken over rows
+        out.device(d) = (logits - max_logits_.broadcast(one_x_cols))
+                        .exp()
+                        .sum(along_cols)
+                        .log()
+                        .reshape(rows_x_one) + max_logits_;
       }
     };
 

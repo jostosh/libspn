@@ -2,10 +2,6 @@
 
 #define EIGEN_USE_THREADS
 
-#if GOOGLE_CUDA
-#define EIGEN_USE_GPU
-#endif
-
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
@@ -38,8 +34,6 @@ struct LogsumexpFunctorBase {
 template <typename T>
 struct LogsumexpFunctor<CPUDevice, T> : LogsumexpFunctorBase<CPUDevice, T> {};
 
-template <typename T>
-struct LogsumexpFunctor<GPUDevice, T> : LogsumexpFunctorBase<GPUDevice, T> {};
 }  // namespace functor
 
 template <typename Device, typename T>
@@ -101,24 +95,26 @@ REGISTER_OP("ReduceLogsumexp")
           .Device(DEVICE_CPU)                                                  \
           .TypeConstraint<type>("T"),                                          \
       LogsumexpOp<CPUDevice, type>);
-//TF_CALL_NUMBER_TYPES(REGISTER_CPU_KERNELS);
-REGISTER_CPU_KERNELS(float)
-REGISTER_CPU_KERNELS(double)
+TF_CALL_half(REGISTER_CPU_KERNELS);
+TF_CALL_float(REGISTER_CPU_KERNELS);
+TF_CALL_double(REGISTER_CPU_KERNELS);
+//REGISTER_CPU_KERNELS(float)
+//REGISTER_CPU_KERNELS(double)
 #undef REGISTER_CPU_KERNELS
-
-#if GOOGLE_CUDA
-
-#define REGISTER_GPU_KERNELS(type)                                             \
-  REGISTER_KERNEL_BUILDER(                                                     \
-      Name("ReduceLogsumexp")                                                  \
-          .Device(DEVICE_GPU)                                                  \
-          .TypeConstraint<type>("T"),                                          \
-      LogsumexpOp<GPUDevice, type>);
-//TF_CALL_NUMBER_TYPES(REGISTER_CPU_KERNELS);
-REGISTER_GPU_KERNELS(float)
-REGISTER_GPU_KERNELS(double)
-#undef REGISTER_GPU_KERNELS
-
-#endif
+//
+// #if GOOGLE_CUDA
+//
+// #define REGISTER_GPU_KERNELS(type)                                             \
+//   REGISTER_KERNEL_BUILDER(                                                     \
+//       Name("ReduceLogsumexp")                                                  \
+//           .Device(DEVICE_GPU)                                                  \
+//           .TypeConstraint<type>("T"),                                          \
+//       LogsumexpOp<GPUDevice, type>);
+// //TF_CALL_NUMBER_TYPES(REGISTER_CPU_KERNELS);
+// REGISTER_GPU_KERNELS(float)
+// REGISTER_GPU_KERNELS(double)
+// #undef REGISTER_GPU_KERNELS
+//
+// #endif
 
 }
