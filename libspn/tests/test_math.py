@@ -11,6 +11,10 @@ from context import libspn as spn
 from test import TestCase
 import tensorflow as tf
 import numpy as np
+import itertools
+
+FLOAT_DTS = [tf.float32, tf.float64]
+DEVICES = ['/cpu:0', '/device:GPU:0']
 
 
 class TestMath(TestCase):
@@ -414,30 +418,64 @@ class TestMath(TestCase):
 
     def test_reduce_log_sum(self):
 
-        def test(dtype):
+        def test_2d(dtype, device):
             with self.subTest(dtype=dtype):
-                inpt = [[0.0, 0.0, 0.0],
-                        [0.0, 0.1, 0.0],
-                        [0.1, 0.2, 0.3],
-                        [1.0, 0.0, 2.0],
-                        [0.0000001, 0.0000002, 0.0000003],
-                        [1e-10, 2e-10, 3e-10]]
-                inpt_array = np.array(inpt, dtype=dtype.as_numpy_dtype())
-                inpt_tensor = tf.constant(inpt, dtype=dtype)
-                log_inpt_tensor = tf.log(inpt_tensor)
-                op_log = spn.utils.reduce_log_sum(log_inpt_tensor)
-                op = tf.exp(op_log)
+                inpt = np.asarray(
+                    [[0.0, 0.0, 0.0],
+                     [0.0, 0.1, 0.0],
+                     [0.1, 0.2, 0.3],
+                     [1.0, 0.0, 2.0],
+                     [0.0000001, 0.0000002, 0.0000003],
+                     [1e-10, 2e-10, 3e-10]])
+
+                with tf.device(device):
+                    ph = tf.placeholder(dtype, inpt.shape)
+                    log_inpt_tensor = tf.log(ph)
+                    op_log = spn.utils.reduce_log_sum(log_inpt_tensor)
+                    op = tf.exp(op_log)
 
                 with self.test_session() as sess:
-                    out = sess.run(op)
+                    out = sess.run(op, feed_dict={ph: inpt})
 
                 np.testing.assert_array_almost_equal(out,
-                                                     np.sum(inpt_array, axis=1,
+                                                     np.sum(inpt, axis=1,
                                                             keepdims=True))
                 self.assertEqual(out.dtype, dtype.as_numpy_dtype())
 
-        test(tf.float32)
-        test(tf.float64)
+        def test_inf(dtype, device):
+            with self.subTest(dtype=dtype):
+                log_input = np.asarray([5 * [-float('inf')]])
+                op = spn.utils.reduce_log_sum(log_input)
+                with self.test_session() as sess:
+                    out = sess.run(op)
+                np.testing.assert_array_almost_equal([[-float('inf')]], out)
+
+        def test_3d(dtype, device):
+            with self.subTest(dtype=dtype):
+                inpt = np.asarray(
+                    [[[0.0, 0.0, 0.0],
+                     [0.0, 0.1, 0.0],
+                     [0.1, 0.2, 0.3]],
+                     [[1.0, 0.0, 2.0],
+                     [0.0000001, 0.0000002, 0.0000003],
+                     [1e-10, 2e-10, 3e-10]]])
+
+                with tf.device(device):
+                    ph = tf.placeholder(dtype, inpt.shape)
+                    log_inpt_tensor = tf.log(ph)
+                    op_log = spn.utils.reduce_log_sum(log_inpt_tensor)
+                    op = tf.exp(op_log)
+
+                with self.test_session() as sess:
+                    out = sess.run(op, feed_dict={ph: inpt})
+
+                np.testing.assert_array_almost_equal(out,
+                                                     np.sum(inpt, axis=-1,
+                                                            keepdims=True))
+                self.assertEqual(out.dtype, dtype.as_numpy_dtype())
+
+        for dev, dt, fn in itertools.product(DEVICES, FLOAT_DTS, [test_2d, test_3d, test_inf]):
+            fn(dt, dev)
 
     def test_split_maybe(self):
         value1 = tf.constant(np.r_[:7])

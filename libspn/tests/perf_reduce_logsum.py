@@ -43,17 +43,13 @@ class Ops:
     def noop(params):
         return params
 
-    def reduce_logsum(params):
-        return spn.utils.math.reduce_log_sum(params)
+    def logsum_old(params):
+        return spn.utils.math.reduce_log_sum_v2(params)
 
-    def reduce_logsum_tf(params):
+    def logsum_tf(params):
         return tf.reduce_logsumexp(params, axis=-1, keepdims=True)
 
-    def reduce_logsum_pyfunc(params):
-        fn = partial(scipy.misc.logsumexp, axis=-1, keepdims=True)
-        return tf.py_func(fn, [params], params.dtype)
-
-    def reduce_logsum_cust(params):
+    def logsum_custom(params):
         return op_module.reduce_logsumexp(params)
 
 
@@ -196,7 +192,6 @@ class PerformanceTest:
                     self._run_op_test(op_fun, params, on_gpu=True))
         return TestResults(test_name, cpu_results, gpu_results)
 
-
     def _run_2d(self):
         """Run all 2D tests."""
         results = []
@@ -211,8 +206,7 @@ class PerformanceTest:
         # Passthrough
         params = np.random.rand(self.num_param_rows, self.num_param_cols)
         r = self._run_test('2d_passthrough',
-                           [Ops.reduce_logsum_cust, Ops.reduce_logsum, Ops.reduce_logsum_tf] +
-                           ([Ops.reduce_logsum_pyfunc] if self.without_gpu else []),
+                           [Ops.logsum_custom, Ops.logsum_old, Ops.logsum_tf],
                            params)
         results.append(r)
 
@@ -227,8 +221,7 @@ class PerformanceTest:
             self.num_param_slices, self.num_param_rows, self.num_param_cols
         )
         r = self._run_test('3d_passthrough',
-                           [Ops.reduce_logsum_cust, Ops.reduce_logsum, Ops.reduce_logsum_tf] +
-                           ([Ops.reduce_logsum_pyfunc] if self.without_gpu else []),
+                           [Ops.logsum_custom, Ops.logsum_old, Ops.logsum_tf],
                            params)
         results.append(r)
 

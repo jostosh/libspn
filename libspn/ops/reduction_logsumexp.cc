@@ -26,9 +26,13 @@ using shape_inference::Dimension;
 namespace functor {
 template <typename Device, typename T>
 struct LogsumexpFunctorBase {
-  void operator()(const Device& d, typename TTypes<T>::ConstMatrix &logits,
+  void operator()(const Device& d,
+                  typename TTypes<T>::ConstMatrix &logits,
+                  typename TTypes<T>::Matrix &max_logits,
+                  typename TTypes<T>::Matrix &max_logits_safe,
                   typename TTypes<T>::Matrix &out) {
-    LogsumexpEigenImpl<Device, T>::Compute(d, logits, out);
+    LogsumexpEigenImpl<Device, T>::Compute(
+      d, logits, max_logits, max_logits_safe, out);
   }
 };
 template <typename T>
@@ -56,13 +60,28 @@ class LogsumexpOp : public OpKernel {
     TensorShape out_shape(logits_in_.shape());
     out_shape.set_dim(lastdim, 1);
     Tensor* out = nullptr;
-    context->allocate_output(0, out_shape, &out);
+
+    Tensor max_logits, max_logits_safe;
+
+    // Allocate output and temporary tensors
+    OP_REQUIRES_OK(context,
+      context->allocate_output(0, out_shape, &out));
+    OP_REQUIRES_OK(context,
+      context->allocate_temp(DataTypeToEnum<T>::value, out_shape, &max_logits));
+    OP_REQUIRES_OK(context,
+      context->allocate_temp(DataTypeToEnum<T>::value, out_shape,
+        &max_logits_safe));
 
     const Device &device = context->eigen_device<Device>();
     if (logits_in_.NumElements() > 0) {
       functor::LogsumexpFunctor<Device, T> functor;
+
+      // Feed Eigen matrices to functor
       auto out_matrix = out->flat_inner_dims<T>();
-      functor(device, logits_in, out_matrix);
+      auto max_logits_matrix = max_logits.flat_inner_dims<T>();
+      auto max_logits_safe_matrix = max_logits_safe.flat_inner_dims<T>();
+      functor(device, logits_in, max_logits_matrix, max_logits_safe_matrix,
+        out_matrix);
     }
   }
 };

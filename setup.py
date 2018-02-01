@@ -182,8 +182,8 @@ class BuildCommand(distutils.command.build.build):
                     '-I', self._tf_includes,
                     # The below fixes a missing include in TF 1.4rc0
                     '-I', os.path.join(self._tf_includes, 'external', 'nsync', 'public'),
-                    '-L', self._cuda_libs,
                     '-I', '/usr/local/cuda/include',
+                    '-L', self._cuda_libs,
                     '-L', self._tf_libs] +
                    # Framework library needed for TF>=1.4
                    (['-ltensorflow_framework']
@@ -229,6 +229,7 @@ class BuildCommand(distutils.command.build.build):
         import libspn.ops.ops
         libspn.ops.gather_cols
         libspn.ops.scatter_cols
+        libspn.ops.reduce_logsumexp
         print("Custom ops loaded correctly!")
 
     def run(self):
