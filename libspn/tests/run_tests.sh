@@ -2,7 +2,7 @@
 
 set -e
 
-echo "Running 10 tests"
+echo "Running 5 tests"
 
 for i in `seq 1 5`;
 do

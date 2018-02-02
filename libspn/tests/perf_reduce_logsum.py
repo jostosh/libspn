@@ -253,7 +253,7 @@ def main():
                         help="Size of the output")
     parser.add_argument('--num-ops', default=200, type=int,
                         help="Num of ops used for tests")
-    parser.add_argument('--num-runs', default=50, type=int,
+    parser.add_argument('--num-runs', default=100, type=int,
                         help="Number of times each test is run")
     parser.add_argument('--log-devices', action='store_true',
                         help="Log on which device op is run. Affects run time!")
