@@ -4,4 +4,5 @@ __pycache__
 dist
 build
 libspn.egg-info
+third_party
 *.gch
