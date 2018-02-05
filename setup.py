@@ -7,6 +7,49 @@ import shutil
 import sys
 import os
 import subprocess
+import re
+import contextlib
+import tempfile
+
+
+@contextlib.contextmanager
+def cd(newdir, cleanup=lambda: True):
+    prevdir = os.getcwd()
+    os.chdir(os.path.expanduser(newdir))
+    try:
+        yield
+    finally:
+        os.chdir(prevdir)
+        cleanup()
+
+
+@contextlib.contextmanager
+def tempdir():
+    dirpath = tempfile.mkdtemp()
+    def cleanup():
+        shutil.rmtree(dirpath)
+    with cd(dirpath, cleanup):
+        yield dirpath
+
+
+def _tf_version_to_branch():
+    import tensorflow as tf
+    if tf.__version__ == '1.2.0':
+        return 'v1.2.0-rc2'
+    if tf.__version__ == '1.2.1':
+        return 'v1.2.1'
+    if tf.__version__ == '1.3.0':
+        return 'v1.3.0-rc2'
+    if tf.__version__ == '1.3.1':
+        return 'v1.3.1'
+    if tf.__version__ == '1.4.0':
+        return 'v1.4.0-rc2'
+    if tf.__version__ == '1.4.1':
+        return 'v1.4.1'
+    if tf.__version__ == '1.5.0':
+        return 'v1.5.0-rc1'
+    raise ValueError("Version {}.{} does not have a corresponding git branch".format(major, minor))
+
 
 # Ensure supported version of python is used
 if sys.version_info < (3, 4):
@@ -142,6 +185,70 @@ class BuildCommand(distutils.command.build.build):
             print("  TF gcc version < system gcc version: "
                   "using -D_GLIBCXX_USE_CXX11_ABI=0")
 
+    def _fix_missing_tf_headers(self):
+        """ A hacky way of fixing the missing TensorFlow headers:
+        If a header is not yet present, we fetch it from a clone of the git repo and put it in the local TensorFlow
+        pip installation.
+        """
+        regex = re.compile(R"\#include \"(tensorflow\/core\/kernels\/(?:[a-zA-Z\_]+\/)*[a-zA-Z\_]+(?:\.cu)?\.h)")
+
+        def ensure_includes_exist(fnm):
+            with open(fnm, 'r') as f:
+                for line in f:
+                    if '#include "tensorflow' in line:
+                        match = regex.match(line)
+                        if not match:
+                            continue
+                        path = match.group(1)
+                        if path and not os.path.exists(os.path.join(self._tf_includes, path)):
+                            print("The include {} was not located in your TensorFlow include dir...".format(path))
+                            tf_dir = self._tf_repository_path(tmpdirname)
+                            os.makedirs(os.path.dirname(os.path.join(self._tf_includes, path)), exist_ok=True)
+                            shutil.copyfile(
+                                os.path.join(tf_dir, path),
+                                os.path.join(self._tf_includes, path)
+                            )
+                            assert os.path.exists(os.path.join(self._tf_includes, path))
+                        ensure_includes_exist(os.path.join(self._tf_includes, path))
+
+        with tempdir() as tmpdirname:
+            for fnm in HEADERS_CUDA + SOURCES_CUDA + HEADERS + SOURCES:
+                ensure_includes_exist(fnm)
+
+    def _ensure_third_party_libs(self):
+        project_path = os.path.dirname(os.path.realpath(__file__))
+        cuda_extras = os.path.join(project_path, 'third_party', 'cuda', 'include')
+        os.makedirs(cuda_extras, exist_ok=True)
+        path = os.path.join(cuda_extras, 'cuComplex.h')
+        if not os.path.exists(path):
+            shutil.copyfile(
+                os.path.join(self._cuda_home, 'include', 'cuComplex.h'),
+                path
+            )
+        external = os.path.join(project_path, 'third_party', 'external')
+        os.makedirs(external, exist_ok=True)
+        cub_path = os.path.join(external, 'cub_archive')
+        version = 'v1.7.4'
+        if not os.path.exists(cub_path):
+            os.chdir(external)
+            subprocess.check_call(['wget', 'https://github.com/NVlabs/cub/archive/{}.zip'.format(version)])
+            subprocess.check_call(['unzip', '{}.zip'.format(version)])
+            shutil.move('cub-{}'.format(version[1:]), 'cub_archive')
+            subprocess.check_call(['rm', '{}.zip'.format(version)])
+
+    @staticmethod
+    def _tf_repository_path(tmpdirname):
+        if 'DOT_DIR' in os.environ and os.path.exists(
+                os.path.join(os.environ['DOT_DIR'], 'modules', '50_dot-module-gpu', 'tmp', 'tensorflow')):
+            return os.path.join(os.environ['DOT_DIR'], 'modules', '50_dot-module-gpu', 'tmp', 'tensorflow')
+        os.chdir(tmpdirname)
+        if not os.path.exists(os.path.join(tmpdirname, 'tensorflow')):
+            print("Fetching temporary git clone of TensorFlow at " + tmpdirname)
+            subprocess.check_call(['git', 'clone', 'https://github.com/tensorflow/tensorflow.git'])
+            os.chdir(os.path.join(tmpdirname, 'tensorflow'))
+            subprocess.check_call(['git', 'checkout', _tf_version_to_branch()])
+        return os.path.join(tmpdirname, 'tensorflow')
+
     def _run_nvcc(self, obj, source):
         try:
             cmd = ([self._cuda_nvcc, "-c", "-o",
@@ -150,17 +257,15 @@ class BuildCommand(distutils.command.build.build):
                     '-DGOOGLE_CUDA=1',
                     '--expt-relaxed-constexpr',  # To silence harmless warnings,
                     '-I', self._tf_includes,
-                    # TODO(jos) I also added this, since my system was unable to compile cuda code otherwise...
-                    '-I', '/usr/local',
-                    '-I', '/usr/local/cuda/include',
+                    '-I', 'third_party',         # Some includes needed for third party kernels
                     # The below fixes a missing include in TF 1.4rc0
                     '-I', os.path.join(self._tf_includes, 'external', 'nsync', 'public'),
                     ] +
                    # Downgrade the ABI if system gcc > TF gcc
                    (['-D_GLIBCXX_USE_CXX11_ABI=0']
                     if self._downgrade_abi else []) +
-                  (['-I', self._tf_source_dir]
-                   if self._tf_include_src else []) +
+                  # (['-I', self._tf_source_dir]
+                  #  if self._tf_include_src else []) +
                    # --exec-time build option
                    (['-DEXEC_TIME_CALC=1']
                     if self.exec_time is not None else []) +
@@ -215,6 +320,8 @@ class BuildCommand(distutils.command.build.build):
         # Should rebuild?
         if self._is_dirty(TARGET, SOURCES + HEADERS +
                           SOURCES_CUDA + HEADERS_CUDA):
+            self._ensure_third_party_libs()
+            self._fix_missing_tf_headers()
             # Compile cuda
             for s, h, o in zip(SOURCES_CUDA, HEADERS_CUDA, OBJECTS_CUDA):
                 if self._is_dirty(o, [s, h]):
