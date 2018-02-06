@@ -258,6 +258,7 @@ class BuildCommand(distutils.command.build.build):
         # Going back to 'third_party' dir forces the filesystem to refresh, otherwise nvcc won't
         # find the includes from cub
         os.chdir('..')
+        os.chdir(project_path)
 
     @staticmethod
     def _tf_repository_path(tmpdirname):
