@@ -58,13 +58,14 @@ class OpTestResult:
     """Result of a single test of a single op."""
 
     def __init__(self, op_name, on_gpu, graph_size, setup_time,
-                 run_times, output_correct):
+                 run_times, output_correct, dtype):
         self.op_name = op_name
         self.on_gpu = on_gpu
         self.graph_size = graph_size
         self.setup_time = setup_time
         self.run_times = run_times
         self.output_correct = output_correct
+        self.dtype = dtype
 
 
 class TestResults:
@@ -77,14 +78,14 @@ class TestResults:
 
     def print(self, file):
         def get_header(dev):
-            return ("%3s %14s %5s %11s %15s %14s %10s" %
-                    (dev, 'op', 'size', 'setup_time',
+            return ("%3s %15s %5s %8s %11s %15s %14s %10s" %
+                    (dev, 'op', 'size', 'dtype', 'setup_time',
                      'first_run_time', 'rest_run_time', 'correct'))
 
         def get_res(res):
             """Helper function printing a single result."""
-            return ("%18s: %5d %11.2f %15.2f %14.2f %10s" %
-                    (res.op_name, res.graph_size,
+            return ("%18s: %5d %8s %11.2f %15.2f %14.2f %10s" %
+                    (res.op_name, res.graph_size, res.dtype.name,
                      res.setup_time * 1000, res.run_times[0] * 1000,
                      np.mean(res.run_times[1:]) * 1000,
                      res.output_correct))
@@ -94,10 +95,10 @@ class TestResults:
         print1("%s" % self.test_name, file)
         print1("-----------------------", file)
         print1(get_header("CPU"), file)
-        for res in sorted(self.cpu_results, key=lambda x: x.op_name):
+        for res in sorted(self.cpu_results, key=lambda x: (x.dtype.name, x.op_name)):
             print1(get_res(res), file)
         print1(get_header("GPU"), file)
-        for res in sorted(self.gpu_results, key=lambda x: x.op_name):
+        for res in sorted(self.gpu_results, key=lambda x: (x.dtype.name, x.op_name)):
             print1(get_res(res), file)
 
 
@@ -173,18 +174,19 @@ class PerformanceTest:
                 run_times.append(time.time() - start_time)
                 # Test value
                 try:
-                    np.testing.assert_array_almost_equal(out, true_out)
+                    np.testing.assert_allclose(out, true_out, rtol=1e-5)
+                    # np.testing.assert_array_almost_equal(out, true_out)
                 except AssertionError:
                     output_correct = False
         # Return stats
         return OpTestResult(op_name, on_gpu, graph_size, setup_time,
-                            run_times, output_correct)
+                            run_times, output_correct, dtype)
 
     def _run_test(self, test_name, op_funs, params):
         """Run a single test for multiple ops and devices."""
         cpu_results = []
         gpu_results = []
-        for op_fun, dtype in itertools.product(op_funs, [tf.float64, tf.float32, tf.float16]):
+        for dtype, op_fun in itertools.product([tf.float64, tf.float32], op_funs):
             if not self.without_cpu:
                 cpu_results.append(
                     self._run_op_test(op_fun, params, on_gpu=False, dtype=dtype))
