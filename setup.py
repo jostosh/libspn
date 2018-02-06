@@ -328,6 +328,7 @@ class BuildCommand(distutils.command.build.build):
             self._ensure_cucomplex_h_available()
             self._ensure_cub_available()
             self._fix_missing_tf_headers()
+            os.chdir(os.path.dirname(os.path.realpath(__file__)))
             # Compile cuda
             for s, h, o in zip(SOURCES_CUDA, HEADERS_CUDA, OBJECTS_CUDA):
                 if self._is_dirty(o, [s, h]):
