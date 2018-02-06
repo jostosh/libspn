@@ -196,10 +196,11 @@ class BuildCommand(distutils.command.build.build):
 
     def _fix_missing_tf_headers(self):
         """ A hacky way of fixing the missing TensorFlow headers:
-        If a header is not yet present, we fetch it from a clone of the git repo and put it in the local TensorFlow
-        pip installation.
+        If a header is not yet present, we fetch it from a clone of the git repo and put it in the
+        local TensorFlow pip installation.
         """
-        regex = re.compile(R"\#include \"(tensorflow\/core\/kernels\/(?:[a-zA-Z\_]+\/)*[a-zA-Z\_]+(?:\.cu)?\.h)")
+        regex = re.compile(
+            R"\#include \"(tensorflow\/core\/kernels\/(?:[a-zA-Z\_]+\/)*[a-zA-Z\_]+(?:\.cu)?\.h)")
 
         def ensure_includes_exist(fnm):
             with open(fnm, 'r') as f:
@@ -209,9 +210,11 @@ class BuildCommand(distutils.command.build.build):
                         continue
                     path = match.group(1)
                     if path and not os.path.exists(os.path.join(self._tf_includes, path)):
-                        print("The include {} was not located in your TensorFlow include dir...".format(path))
+                        print("The include {} was not located in your TensorFlow include dir..."
+                              .format(path))
                         tf_dir = self._tf_repository_path(tmpdirname)
-                        os.makedirs(os.path.dirname(os.path.join(self._tf_includes, path)), exist_ok=True)
+                        os.makedirs(os.path.dirname(os.path.join(self._tf_includes, path)),
+                                    exist_ok=True)
                         shutil.copyfile(
                             os.path.join(tf_dir, path),
                             os.path.join(self._tf_includes, path)
@@ -245,7 +248,8 @@ class BuildCommand(distutils.command.build.build):
         version = 'v1.7.4'  # TODO maybe this should be configured elsewhere
         if not os.path.exists(cub_path):
             os.chdir(external)
-            subprocess.check_call(['wget', 'https://github.com/NVlabs/cub/archive/{}.zip'.format(version)])
+            subprocess.check_call(['wget', 'https://github.com/NVlabs/cub/archive/{}.zip'
+                                  .format(version)])
             subprocess.check_call(['unzip', '{}.zip'.format(version)])
             shutil.move('cub-{}'.format(version[1:]), 'cub_archive')
             subprocess.check_call(['rm', '{}.zip'.format(version)])
@@ -253,9 +257,9 @@ class BuildCommand(distutils.command.build.build):
     @staticmethod
     def _tf_repository_path(tmpdirname):
         """ Returns a path to TF repo. This is used for copying some missing headers """
-        if 'DOT_DIR' in os.environ and os.path.exists(
-                os.path.join(os.environ['DOT_DIR'], 'modules', '50_dot-module-gpu', 'tmp', 'tensorflow')):
-            return os.path.join(os.environ['DOT_DIR'], 'modules', '50_dot-module-gpu', 'tmp', 'tensorflow')
+        tf_dot = os.path.join('modules', '50_dot-module-gpu', 'tmp', 'tensorflow')
+        if 'DOT_DIR' in os.environ and os.path.exists(os.path.join(os.environ['DOT_DIR'], tf_dot)):
+            return os.path.join(os.environ['DOT_DIR'], tf_dot)
         os.chdir(tmpdirname)
         if not os.path.exists(os.path.join(tmpdirname, 'tensorflow')):
             print("Fetching temporary git clone of TensorFlow at " + tmpdirname)
@@ -305,7 +309,8 @@ class BuildCommand(distutils.command.build.build):
         if tf.__version__ == '1.5.0':
             return 'v1.5.0-rc1'
         raise ValueError(
-            "Version {} does not have a corresponding git branch configured.".format(tf.__version__))
+            "Version {} does not have a corresponding git branch configured."
+            .format(tf.__version__))
 
     def _is_dirty(self, target, sources):
         """Verify if changes have been made to sources and target must
@@ -319,8 +324,7 @@ class BuildCommand(distutils.command.build.build):
         # Make dirs
         os.makedirs(BUILD_DIR, exist_ok=True)
         # Should rebuild?
-        if self._is_dirty(TARGET, SOURCES + HEADERS +
-                          SOURCES_CUDA + HEADERS_CUDA):
+        if self._is_dirty(TARGET, SOURCES + HEADERS + SOURCES_CUDA + HEADERS_CUDA):
             self._ensure_cucomplex_h_available()
             self._ensure_cub_available()
             self._fix_missing_tf_headers()

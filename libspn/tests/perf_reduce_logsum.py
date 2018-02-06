@@ -15,11 +15,11 @@ import argparse
 import colorama as col
 import sys
 import scipy.misc
-from functools import partial
-import os
+import itertools
 col.init()
 
 op_module = tf.load_op_library('/home/jos/spn/libspn/libspn/ops/libspn_ops.so')
+
 
 def print1(str, file):
     if file:
@@ -31,6 +31,7 @@ def print2(str, file):
     if file:
         print(str, file=file)
     print(col.Fore.BLUE + str + col.Style.RESET_ALL)
+
 
 def print3(str, file):
     if file:
@@ -126,15 +127,15 @@ class PerformanceTest:
         print1("- dtype=%s" % dtype, file)
         print1("", file=file)
 
-    def _run_op_test(self, op_fun, params, on_gpu):
+    def _run_op_test(self, op_fun, params, on_gpu, dtype):
         """Run a single test for a single op."""
         # Preparations
         op_name = op_fun.__name__
         device_name = '/gpu:0' if on_gpu else '/cpu:0'
-        params = np.asarray(params, dtype='float32') #self.dtype.as_numpy_dtype())
+        params = np.asarray(params, dtype=dtype)
         # Print
-        print2("--> %s: on_gpu=%s, params_shape=%s"
-               % (op_name, on_gpu, params.shape),
+        print2("--> %s: on_gpu=%s, params_shape=%s, dtype=%s"
+               % (op_name, on_gpu, params.shape, dtype),
                self.file)
         # Compute true output with numpy
         true_out = scipy.misc.logsumexp(params, axis=-1, keepdims=True)
@@ -183,13 +184,13 @@ class PerformanceTest:
         """Run a single test for multiple ops and devices."""
         cpu_results = []
         gpu_results = []
-        for op_fun in op_funs:
+        for op_fun, dtype in itertools.product(op_funs, [tf.float64, tf.float32, tf.float16]):
             if not self.without_cpu:
                 cpu_results.append(
-                    self._run_op_test(op_fun, params, on_gpu=False))
+                    self._run_op_test(op_fun, params, on_gpu=False, dtype=dtype))
             if not self.without_gpu:
                 gpu_results.append(
-                    self._run_op_test(op_fun, params, on_gpu=True))
+                    self._run_op_test(op_fun, params, on_gpu=True, dtype=dtype))
         return TestResults(test_name, cpu_results, gpu_results)
 
     def _run_2d(self):
@@ -226,7 +227,6 @@ class PerformanceTest:
         results.append(r)
 
         return results
-
 
     def run(self):
         """Run all tests."""
