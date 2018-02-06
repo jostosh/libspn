@@ -255,6 +255,9 @@ class BuildCommand(distutils.command.build.build):
             subprocess.check_call(['unzip', '{}.zip'.format(version)])
             shutil.move('cub-{}'.format(version[1:]), 'cub_archive')
             subprocess.check_call(['rm', '{}.zip'.format(version)])
+        # Going back to 'third_party' dir forces the filesystem to refresh, otherwise nvcc won't
+        # find the includes from cub
+        os.chdir('..')
 
     @staticmethod
     def _tf_repository_path(tmpdirname):
