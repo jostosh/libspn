@@ -199,6 +199,7 @@ class BuildCommand(distutils.command.build.build):
         If a header is not yet present, we fetch it from a clone of the git repo and put it in the
         local TensorFlow pip installation.
         """
+        # We only care about tensorflow/core/kernels/*.h patterns that are missing
         regex = re.compile(
             R"\#include \"(tensorflow\/core\/kernels\/(?:[a-zA-Z\_]+\/)*[a-zA-Z\_]+(?:\.cu)?\.h)")
 
@@ -220,6 +221,7 @@ class BuildCommand(distutils.command.build.build):
                             os.path.join(self._tf_includes, path)
                         )
                         assert os.path.exists(os.path.join(self._tf_includes, path))
+                    # Do this recursively on the includes in the new file
                     ensure_includes_exist(os.path.join(self._tf_includes, path))
 
         with self.tempdir() as tmpdirname:
@@ -256,7 +258,10 @@ class BuildCommand(distutils.command.build.build):
 
     @staticmethod
     def _tf_repository_path(tmpdirname):
-        """ Returns a path to TF repo. This is used for copying some missing headers """
+        """ Returns a path to TF repo. This is used for copying some missing headers. It will look
+        for a dot module containing TF, if this does not succeed, we fetch a clone in a temporary
+        directory
+        """
         tf_dot = os.path.join('modules', '50_dot-module-gpu', 'tmp', 'tensorflow')
         if 'DOT_DIR' in os.environ and os.path.exists(os.path.join(os.environ['DOT_DIR'], tf_dot)):
             return os.path.join(os.environ['DOT_DIR'], tf_dot)
@@ -328,7 +333,7 @@ class BuildCommand(distutils.command.build.build):
             self._ensure_cucomplex_h_available()
             self._ensure_cub_available()
             self._fix_missing_tf_headers()
-            os.chdir(os.path.dirname(os.path.realpath(__file__)))
+
             # Compile cuda
             for s, h, o in zip(SOURCES_CUDA, HEADERS_CUDA, OBJECTS_CUDA):
                 if self._is_dirty(o, [s, h]):

@@ -132,7 +132,7 @@ class PerformanceTest:
         # Preparations
         op_name = op_fun.__name__
         device_name = '/gpu:0' if on_gpu else '/cpu:0'
-        params = np.asarray(params, dtype=dtype)
+        params = np.asarray(params, dtype=dtype.as_numpy_dtype())
         # Print
         print2("--> %s: on_gpu=%s, params_shape=%s, dtype=%s"
                % (op_name, on_gpu, params.shape, dtype),
