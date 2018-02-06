@@ -33,7 +33,7 @@ def display_spn_graph(root, skip_params=False):
         # Get a unique node type number, for any node including leafs
         try:
             node_type = node_types.index(node.__class__)
-        except:
+        except ValueError:
             node_type = len(node_types)
             node_types.append(node.__class__)
         # Param and var nodes are added when processing an op node
