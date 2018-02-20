@@ -63,6 +63,17 @@ class Ops:
         index = indices[0]
         return tf.slice(params, [0, index], [-1, 1])
 
+    def gather_matmul(params, indices):
+        mat = np.zeros((100, len(indices)))
+        mat[indices, np.arange(len(indices))] = 1
+
+        mat = mat.astype(params.dtype.as_numpy_dtype())
+
+        return tf.matmul(params, mat)
+
+    def gather_emb_lookup(params, indices):
+        return tf.transpose(tf.nn.embedding_lookup(tf.transpose(params), indices))
+
 
 class OpTestResult:
     """Result of a single test of a single op."""
@@ -271,20 +282,20 @@ class PerformanceTest:
         results = []
         params = np.random.rand(self.num_param_rows, self.num_param_cols)
 
-        # 1 index
-        indices = np.random.randint(low=0, high=self.num_param_cols,
-                                    size=1)
-        r = self._run_test('2d_1index',
-                           [Ops.custom, Ops.gather_nd, Ops.slice_2d],
-                           params, indices)
-        results.append(r)
-
-        # Passthrough
-        indices = range(self.num_param_cols)
-        r = self._run_test('2d_passthrough_%sindices' % self.num_param_cols,
-                           [Ops.custom, Ops.gather_nd, Ops.noop],
-                           params, indices)
-        results.append(r)
+        # # 1 index
+        # indices = np.random.randint(low=0, high=self.num_param_cols,
+        #                             size=1)
+        # r = self._run_test('2d_1index',
+        #                    [Ops.custom, Ops.gather_nd, Ops.slice_2d],
+        #                    params, indices)
+        # results.append(r)
+        #
+        # # Passthrough
+        # indices = range(self.num_param_cols)
+        # r = self._run_test('2d_passthrough_%sindices' % self.num_param_cols,
+        #                    [Ops.custom, Ops.gather_nd, Ops.noop],
+        #                    params, indices)
+        # results.append(r)
 
         # Partially optimized
         shuffled_ind = [0, 1, 2, 9, 5, 4, 6, 7, 8, 3]
@@ -292,7 +303,7 @@ class PerformanceTest:
         indices[:] = shuffled_ind
         indices = indices.ravel()
         r = self._run_test('2d_opt_%sindices' % self.num_param_cols,
-                           [Ops.custom, Ops.gather_nd] +
+                           [Ops.custom, Ops.gather_nd, Ops.gather_matmul, Ops.gather_emb_lookup] +
                            ([Ops.indexing] if self.with_indexing else []),
                            params, indices)
         results.append(r)
@@ -300,7 +311,7 @@ class PerformanceTest:
         # Worst case
         indices = range(self.num_param_cols - 1, -1, -1)
         r = self._run_test('2d_worst_%sindices' % self.num_param_cols,
-                           [Ops.custom, Ops.gather_nd] +
+                           [Ops.custom, Ops.gather_nd, Ops.gather_matmul, Ops.gather_emb_lookup] +
                            ([Ops.indexing] if self.with_indexing else []),
                            params, indices)
         results.append(r)
@@ -309,7 +320,7 @@ class PerformanceTest:
         indices = np.random.randint(low=0, high=self.num_param_cols,
                                     size=self.num_indices)
         r = self._run_test('2d_random_%dindices' % self.num_indices,
-                           [Ops.custom, Ops.gather_nd] +
+                           [Ops.custom, Ops.gather_nd, Ops.gather_matmul, Ops.gather_emb_lookup] +
                            ([Ops.indexing] if self.with_indexing else []),
                            params, indices)
         results.append(r)
