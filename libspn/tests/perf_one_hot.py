@@ -44,12 +44,24 @@ class Ops:
         # Reshape
         return oh if not log else tf.log(oh)
 
+    def one_hot_v2(params, depth, log=False):
+        oh = tf.one_hot(params, depth)
+        isneg = tf.less(params, 0)
+        any_neg = tf.reduce_any(isneg)
+
+        def add_one_rows():
+            # Detect negative input values and convert them to all IVs equal to 1
+            neg = tf.expand_dims(tf.cast(isneg, dtype=tf.float32), dim=-1)
+            return tf.add(oh, neg)
+
+        dense_ivs = tf.cond(any_neg, add_one_rows, lambda: oh)
+        return dense_ivs if not log else tf.log(dense_ivs)
+
     def gather_v2(params, depth, log=False):
         eye = tf.Variable(initial_value=tf.concat([tf.ones((1, depth)), tf.eye(num_rows=depth)],
                                                   axis=0))
         return tf.gather(eye, params + 1) if not log else tf.gather(tf.log(eye), params + 1)
 
-    @functools.lru_cache()
     def _get_eye(rows, log):
         eye = tf.concat([tf.ones((1, rows)), tf.eye(num_rows=rows)], axis=0)
         if log:
@@ -211,14 +223,24 @@ class PerformanceTest:
         value = np.random.randint(self.num_value_cols + 1, size=self.num_value_rows, dtype=np.int32)
         value -= 1
 
-        # 10 splits
         r = self._run_test('OneHot',
-                           [Ops.one_hot, Ops.gather_v1, Ops.gather_v2, Ops.gather_v3],
+                           [Ops.one_hot, Ops.gather_v1, Ops.gather_v2, Ops.gather_v3, Ops.one_hot_v2],
                            value, log=False)
         results.append(r)
 
         r = self._run_test('OneHot Log',
-                           [Ops.one_hot, Ops.gather_v1, Ops.gather_v2, Ops.gather_v3],
+                           [Ops.one_hot, Ops.gather_v1, Ops.gather_v2, Ops.gather_v3, Ops.one_hot_v2],
+                           value, log=True)
+        results.append(r)
+
+        value = np.random.randint(self.num_value_cols, size=self.num_value_rows, dtype=np.int32)
+        r = self._run_test('OneHot - No Missing',
+                           [Ops.one_hot, Ops.gather_v1, Ops.gather_v2, Ops.gather_v3, Ops.one_hot_v2],
+                           value, log=False)
+        results.append(r)
+
+        r = self._run_test('OneHot Log - No Missing',
+                           [Ops.one_hot, Ops.gather_v1, Ops.gather_v2, Ops.gather_v3, Ops.one_hot_v2],
                            value, log=True)
         results.append(r)
 
@@ -232,7 +254,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--num-value-rows', default=60000, type=int,
                         help="Num of rows of value")
-    parser.add_argument('--num-value-cols', default=500, type=int,
+    parser.add_argument('--num-value-cols', default=200, type=int,
                         help="Num of cols of value")
     parser.add_argument('--num-ops', default=5, type=int,
                         help="Num of ops used for tests")
