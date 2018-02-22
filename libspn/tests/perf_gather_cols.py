@@ -55,6 +55,9 @@ class Ops:
         return tf.reshape(tf.gather(p_flat, i_flat),
                           [p_shape[0], -1])
 
+    def gather_tf(params, indices):
+        return tf.gather(params, indices, axis=1)
+
     def slice_1d(params, indices):
         index = indices[0]
         return tf.slice(params, [index], [1])
@@ -275,14 +278,14 @@ class PerformanceTest:
         indices = np.random.randint(low=0, high=self.num_param_cols,
                                     size=1)
         r = self._run_test('2d_1index',
-                           [Ops.custom, Ops.gather_nd, Ops.slice_2d],
+                           [Ops.custom, Ops.gather_tf, Ops.slice_2d],
                            params, indices)
         results.append(r)
 
         # Passthrough
         indices = range(self.num_param_cols)
         r = self._run_test('2d_passthrough_%sindices' % self.num_param_cols,
-                           [Ops.custom, Ops.gather_nd, Ops.noop],
+                           [Ops.custom, Ops.gather_tf, Ops.noop],
                            params, indices)
         results.append(r)
 
@@ -292,7 +295,7 @@ class PerformanceTest:
         indices[:] = shuffled_ind
         indices = indices.ravel()
         r = self._run_test('2d_opt_%sindices' % self.num_param_cols,
-                           [Ops.custom, Ops.gather_nd] +
+                           [Ops.custom, Ops.gather_tf] +
                            ([Ops.indexing] if self.with_indexing else []),
                            params, indices)
         results.append(r)
@@ -300,7 +303,7 @@ class PerformanceTest:
         # Worst case
         indices = range(self.num_param_cols - 1, -1, -1)
         r = self._run_test('2d_worst_%sindices' % self.num_param_cols,
-                           [Ops.custom, Ops.gather_nd] +
+                           [Ops.custom, Ops.gather_tf] +
                            ([Ops.indexing] if self.with_indexing else []),
                            params, indices)
         results.append(r)
@@ -309,7 +312,7 @@ class PerformanceTest:
         indices = np.random.randint(low=0, high=self.num_param_cols,
                                     size=self.num_indices)
         r = self._run_test('2d_random_%dindices' % self.num_indices,
-                           [Ops.custom, Ops.gather_nd] +
+                           [Ops.custom, Ops.gather_tf] +
                            ([Ops.indexing] if self.with_indexing else []),
                            params, indices)
         results.append(r)
@@ -320,7 +323,7 @@ class PerformanceTest:
         """Run all tests."""
         print1("Running tests:", self.file)
         results = []
-        results += self._run_1d()
+        # results += self._run_1d()
         results += self._run_2d()
 
         # Print results
@@ -331,15 +334,15 @@ class PerformanceTest:
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num-param-rows', default=200, type=int,
+    parser.add_argument('--num-param-rows', default=60000, type=int,
                         help="Num of rows of params")
-    parser.add_argument('--num-param-cols', default=100, type=int,
+    parser.add_argument('--num-param-cols', default=500, type=int,
                         help="Num of cols of params")
-    parser.add_argument('--num-indices', default=50, type=int,
+    parser.add_argument('--num-indices', default=100, type=int,
                         help="Num of indices used for SOME tests")
-    parser.add_argument('--num-ops', default=200, type=int,
+    parser.add_argument('--num-ops', default=10, type=int,
                         help="Num of ops used for tests")
-    parser.add_argument('--num-runs', default=10, type=int,
+    parser.add_argument('--num-runs', default=250, type=int,
                         help="Number of times each test is run")
     parser.add_argument('--log-devices', action='store_true',
                         help="Log on which device op is run. Affects run time!")
