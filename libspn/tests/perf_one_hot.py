@@ -230,13 +230,13 @@ class PerformanceTest:
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num-value-rows', default=2000, type=int,
+    parser.add_argument('--num-value-rows', default=60000, type=int,
                         help="Num of rows of value")
     parser.add_argument('--num-value-cols', default=500, type=int,
                         help="Num of cols of value")
-    parser.add_argument('--num-ops', default=10, type=int,
+    parser.add_argument('--num-ops', default=5, type=int,
                         help="Num of ops used for tests")
-    parser.add_argument('--num-runs', default=200, type=int,
+    parser.add_argument('--num-runs', default=100, type=int,
                         help="Number of times each test is run")
     parser.add_argument('--log-devices', action='store_true',
                         help="Log on which device op is run. Affects run time!")
