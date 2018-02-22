@@ -223,23 +223,23 @@ class PerformanceTest:
         value = np.random.randint(self.num_value_cols + 1, size=self.num_value_rows, dtype=np.int32)
         value -= 1
 
-        r = self._run_test('OneHot',
+        r = self._run_test('IVs value',
                            [Ops.one_hot, Ops.gather_v1, Ops.gather_v2, Ops.gather_v3, Ops.one_hot_v2],
                            value, log=False)
         results.append(r)
 
-        r = self._run_test('OneHot Log',
+        r = self._run_test('IVs value Log',
                            [Ops.one_hot, Ops.gather_v1, Ops.gather_v2, Ops.gather_v3, Ops.one_hot_v2],
                            value, log=True)
         results.append(r)
 
         value = np.random.randint(self.num_value_cols, size=self.num_value_rows, dtype=np.int32)
-        r = self._run_test('OneHot - No Missing',
+        r = self._run_test('IVs value - No Missing',
                            [Ops.one_hot, Ops.gather_v1, Ops.gather_v2, Ops.gather_v3, Ops.one_hot_v2],
                            value, log=False)
         results.append(r)
 
-        r = self._run_test('OneHot Log - No Missing',
+        r = self._run_test('IVs value Log - No Missing',
                            [Ops.one_hot, Ops.gather_v1, Ops.gather_v2, Ops.gather_v3, Ops.one_hot_v2],
                            value, log=True)
         results.append(r)
