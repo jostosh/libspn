@@ -53,7 +53,7 @@ struct SubtractAndExpFunctor {
     // Assuming input is 2D [(num_rows_) x num_cols_], we can find the
     // index of the corresponding max logit by dividing the offset given
     // by gid by num_cols_
-    return exp(logits_[gid] - ldg(max_logits_ + gid / num_cols_));
+    return exp(ldg(logits_ + gid) - ldg(max_logits_ + gid / num_cols_));
   }
 
   const T* logits_;
@@ -61,6 +61,39 @@ struct SubtractAndExpFunctor {
   const int num_cols_;
 };
 
+
+template <typename T>
+__global__ void SubtractAndExpKernel(const T* logits,
+                                     T* max_logits,
+                                     const int num_cols,
+                                     T* out,
+                                     const int total_size)
+{
+  // Uses shared mem, but turns out not to yield any significant speed-up...
+  extern __shared__ __align__(sizeof(T)) unsigned char max_logits_shared[];
+  T *smem = reinterpret_cast<T *>(max_logits_shared);
+  CUDA_1D_KERNEL_LOOP(x, total_size)
+  {
+    // Determine the 'row' in shared memory
+    const int tid = threadIdx.x;
+    const int block_start = x - tid;
+    const int block_offset = block_start % num_cols;
+    const int row = (block_offset + tid) / num_cols;
+
+    if (tid == 0 || (block_offset + tid) % num_cols == 0)
+    {
+      // Read the max value, and set it to 0 if infinite
+      T val = max_logits[x / num_cols];
+      val = isinf(val) ? static_cast<T>(0) : val;
+      max_logits[x / num_cols] = val;
+      smem[row] = val;
+    }
+    __syncthreads();
+
+    // Subtract and exponentialize
+    out[x] = exp(ldg(logits + x) - smem[row]);
+  }
+}
 
 template <typename T>
 __global__ void LogAddAssignKernel(CudaLaunchConfig clc,
@@ -115,6 +148,7 @@ class LogSumExpOpGPU : public OpKernel {
     Tensor *out;
     context->allocate_output(0, out_shape, &out);
 
+
     const cudaStream_t& cu_stream = GetCudaStream(context);
     const GPUDevice &d = context->eigen_device<GPUDevice>();
     if (logits_in_.NumElements() > 0) {
@@ -125,34 +159,55 @@ class LogSumExpOpGPU : public OpKernel {
                      context->allocate_temp(DataTypeToEnum<T>::value,
                                             out_shape, &max_logits));
 
+      Tensor exp_logits_sub_max;
+      OP_REQUIRES_OK(context,
+                     context->allocate_temp(DataTypeToEnum<T>::value,
+                                            logits_in_.shape(),
+                                            &exp_logits_sub_max));
+
+
       // Perform max reduction over rows, storing in max_logits
       DoRowReduction<T, cub::Max, const T*>(
           context, const_cast<T*>(max_logits.flat<T>().data()),
           reinterpret_cast<const T*>(logits_in_.flat<T>().data()), rows, cols);
 
       // Making sure we don't subtract infinite numbers
-      CudaLaunchConfig config = GetCudaLaunchConfig(max_logits.NumElements(), d);
-      ReplaceInfWithZero
-        <<<config.block_count, config.thread_per_block, 0, cu_stream>>>(
-          reinterpret_cast<T*>(max_logits.flat<T>().data()), config);
+      // CudaLaunchConfig config = GetCudaLaunchConfig(max_logits.NumElements(), d);
+      // ReplaceInfWithZero
+      //   <<<config.block_count, config.thread_per_block, 0, cu_stream>>>(
+      //     reinterpret_cast<T*>(max_logits.flat<T>().data()), config);
+
+      // Subtracts max and exponentialize
+      CudaLaunchConfig config = GetCudaLaunchConfig(logits_in_.NumElements(), d);
+      const int smem_len = config.thread_per_block / cols + 1;
+      SubtractAndExpKernel
+        <<<config.block_count, config.thread_per_block, smem_len * sizeof(T),
+           cu_stream>>>(
+          reinterpret_cast<const T*>(logits_in_.flat<T>().data()),
+          const_cast<T*>(max_logits.flat<T>().data()),
+          cols,
+          const_cast<T*>(exp_logits_sub_max.flat<T>().data()),
+          rows * cols);
+
 
       // Setting up an iterator that will subtract the max and exponentialize
       // the result. This acts as a kind of 'placeholder' for the next
       // reduction operation, where the value is 'fetched'
-      config = GetCudaLaunchConfig(logits_in_.NumElements(), d);
-      cub::CountingInputIterator<int> counting_iterator(0);
-      typedef cub::TransformInputIterator<T, SubtractAndExpFunctor<T>,
-          cub::CountingInputIterator<int>> InputIterType;
-      InputIterType input_itr(
-          counting_iterator,
-          SubtractAndExpFunctor<T>(
-              reinterpret_cast<const T*>(logits_in_.flat<T>().data()),
-              reinterpret_cast<const T*>(max_logits.flat<T>().data()),
-              cols));
+      // config = GetCudaLaunchConfig(logits_in_.NumElements(), d);
+      // cub::CountingInputIterator<int> counting_iterator(0);
+      // typedef cub::TransformInputIterator<T, SubtractAndExpFunctor<T>,
+      //     cub::CountingInputIterator<int>> InputIterType;
+      // InputIterType input_itr(
+      //     counting_iterator,
+      //     SubtractAndExpFunctor<T>(
+      //         reinterpret_cast<const T*>(logits_in_.flat<T>().data()),
+      //         reinterpret_cast<const T*>(max_logits.flat<T>().data()),
+      //         cols));
 
       // Now take the sum
-      DoRowReduction<T, cub::Sum, InputIterType>(
-        context, const_cast<T*>(out->flat<T>().data()), input_itr, rows,
+      DoRowReduction<T, cub::Sum, const T*>(
+        context, const_cast<T*>(out->flat<T>().data()),
+        reinterpret_cast<const T*>(exp_logits_sub_max.flat<T>().data()), rows,
         cols);
 
       // Obtain the output by computing y(a) = log(a) + mx
