@@ -291,7 +291,7 @@ def reduce_log_sum_v2(log_input, name=None):
         return tf.where(all_zero, out_zeros, out_normal)
 
 
-def reduce_log_sum(log_input: tf.Tensor, name=None):
+def reduce_log_sum(log_input, name=None):
     """Computes the log of a sum of elements of a tensor containing the
     log-values on the last axis. Uses a custom TF Op.
 
@@ -302,12 +302,14 @@ def reduce_log_sum(log_input: tf.Tensor, name=None):
         Tensor: The reduced tensor of shape ``(d_0, d_1, ..., d_{n-1}, 1)``, where the d_i
         corresponds to the dimension i of ``log_input``.
     """
-
-    with tf.name_scope(name, "reduce_log_sum", [log_input]):
-        tensor = tf.convert_to_tensor(log_input)
-        tensor.get_shape().with_rank_at_least(2)
-        tensor.get_shape().with_rank_at_most(3)
-        return ops.reduce_logsumexp(tensor)
+    if conf.custom_reduce_logsum:
+        with tf.name_scope(name, "reduce_log_sum", [log_input]):
+            tensor = tf.convert_to_tensor(log_input)
+            tensor.get_shape().with_rank_at_least(2)
+            tensor.get_shape().with_rank_at_most(3)
+            return ops.reduce_logsumexp(tensor)
+    else:
+        return reduce_log_sum_v2(log_input, name=name)
 
 
 def concat_maybe(values, axis, name='concat'):

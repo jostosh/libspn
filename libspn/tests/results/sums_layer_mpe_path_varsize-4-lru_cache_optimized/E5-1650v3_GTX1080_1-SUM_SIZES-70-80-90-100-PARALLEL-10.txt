@@ -1,0 +1,151 @@
+Params:
+- batch_size=500
+- sum_sizes=[70, 80, 90, 100]
+- num_runs=250
+- num_parallel=10
+
+Running tests:
+--> par_sums: on_gpu=False, inputs_shape=(500, 100), inference=MARGINAL, log=False, IVs=No
+--> par_sums: on_gpu=True, inputs_shape=(500, 100), inference=MARGINAL, log=False, IVs=No
+--> sums_layer: on_gpu=False, inputs_shape=(500, 100), inference=MARGINAL, log=False, IVs=No
+--> sums_layer: on_gpu=True, inputs_shape=(500, 100), inference=MARGINAL, log=False, IVs=No
+--> sums_layer_v2: on_gpu=False, inputs_shape=(500, 100), inference=MARGINAL, log=False, IVs=No
+--> sums_layer_v2: on_gpu=True, inputs_shape=(500, 100), inference=MARGINAL, log=False, IVs=No
+--> par_sums: on_gpu=False, inputs_shape=(500, 100), inference=MARGINAL, log=False, IVs=Yes
+--> par_sums: on_gpu=True, inputs_shape=(500, 100), inference=MARGINAL, log=False, IVs=Yes
+--> sums_layer: on_gpu=False, inputs_shape=(500, 100), inference=MARGINAL, log=False, IVs=Yes
+--> sums_layer: on_gpu=True, inputs_shape=(500, 100), inference=MARGINAL, log=False, IVs=Yes
+--> sums_layer_v2: on_gpu=False, inputs_shape=(500, 100), inference=MARGINAL, log=False, IVs=Yes
+--> sums_layer_v2: on_gpu=True, inputs_shape=(500, 100), inference=MARGINAL, log=False, IVs=Yes
+--> par_sums: on_gpu=False, inputs_shape=(500, 100), inference=MARGINAL, log=True, IVs=No
+--> par_sums: on_gpu=True, inputs_shape=(500, 100), inference=MARGINAL, log=True, IVs=No
+--> sums_layer: on_gpu=False, inputs_shape=(500, 100), inference=MARGINAL, log=True, IVs=No
+--> sums_layer: on_gpu=True, inputs_shape=(500, 100), inference=MARGINAL, log=True, IVs=No
+--> sums_layer_v2: on_gpu=False, inputs_shape=(500, 100), inference=MARGINAL, log=True, IVs=No
+--> sums_layer_v2: on_gpu=True, inputs_shape=(500, 100), inference=MARGINAL, log=True, IVs=No
+--> par_sums: on_gpu=False, inputs_shape=(500, 100), inference=MARGINAL, log=True, IVs=Yes
+--> par_sums: on_gpu=True, inputs_shape=(500, 100), inference=MARGINAL, log=True, IVs=Yes
+--> sums_layer: on_gpu=False, inputs_shape=(500, 100), inference=MARGINAL, log=True, IVs=Yes
+--> sums_layer: on_gpu=True, inputs_shape=(500, 100), inference=MARGINAL, log=True, IVs=Yes
+--> sums_layer_v2: on_gpu=False, inputs_shape=(500, 100), inference=MARGINAL, log=True, IVs=Yes
+--> sums_layer_v2: on_gpu=True, inputs_shape=(500, 100), inference=MARGINAL, log=True, IVs=Yes
+--> par_sums: on_gpu=False, inputs_shape=(500, 100), inference=MPE, log=False, IVs=No
+--> par_sums: on_gpu=True, inputs_shape=(500, 100), inference=MPE, log=False, IVs=No
+--> sums_layer: on_gpu=False, inputs_shape=(500, 100), inference=MPE, log=False, IVs=No
+--> sums_layer: on_gpu=True, inputs_shape=(500, 100), inference=MPE, log=False, IVs=No
+--> sums_layer_v2: on_gpu=False, inputs_shape=(500, 100), inference=MPE, log=False, IVs=No
+--> sums_layer_v2: on_gpu=True, inputs_shape=(500, 100), inference=MPE, log=False, IVs=No
+--> par_sums: on_gpu=False, inputs_shape=(500, 100), inference=MPE, log=False, IVs=Yes
+--> par_sums: on_gpu=True, inputs_shape=(500, 100), inference=MPE, log=False, IVs=Yes
+--> sums_layer: on_gpu=False, inputs_shape=(500, 100), inference=MPE, log=False, IVs=Yes
+--> sums_layer: on_gpu=True, inputs_shape=(500, 100), inference=MPE, log=False, IVs=Yes
+--> sums_layer_v2: on_gpu=False, inputs_shape=(500, 100), inference=MPE, log=False, IVs=Yes
+--> sums_layer_v2: on_gpu=True, inputs_shape=(500, 100), inference=MPE, log=False, IVs=Yes
+--> par_sums: on_gpu=False, inputs_shape=(500, 100), inference=MPE, log=True, IVs=No
+--> par_sums: on_gpu=True, inputs_shape=(500, 100), inference=MPE, log=True, IVs=No
+--> sums_layer: on_gpu=False, inputs_shape=(500, 100), inference=MPE, log=True, IVs=No
+--> sums_layer: on_gpu=True, inputs_shape=(500, 100), inference=MPE, log=True, IVs=No
+--> sums_layer_v2: on_gpu=False, inputs_shape=(500, 100), inference=MPE, log=True, IVs=No
+--> sums_layer_v2: on_gpu=True, inputs_shape=(500, 100), inference=MPE, log=True, IVs=No
+--> par_sums: on_gpu=False, inputs_shape=(500, 100), inference=MPE, log=True, IVs=Yes
+--> par_sums: on_gpu=True, inputs_shape=(500, 100), inference=MPE, log=True, IVs=Yes
+--> sums_layer: on_gpu=False, inputs_shape=(500, 100), inference=MPE, log=True, IVs=Yes
+--> sums_layer: on_gpu=True, inputs_shape=(500, 100), inference=MPE, log=True, IVs=Yes
+--> sums_layer_v2: on_gpu=False, inputs_shape=(500, 100), inference=MPE, log=True, IVs=Yes
+--> sums_layer_v2: on_gpu=True, inputs_shape=(500, 100), inference=MPE, log=True, IVs=Yes
+
+-----------------------
+InferenceType: MARGINAL
+-----------------------
+CPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   140     Yes    No       59.07              9.58           17.26           5.90      False
+     sums_layer   174     Yes    No       99.57              8.60           14.50          13.80       True
+  sums_layer_v2    50     Yes    No       27.12              7.17           17.37          13.83       True
+GPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   140     Yes    No       57.60              8.39          110.91           2.78       True
+     sums_layer   174     Yes    No       83.50              7.86            6.13           2.19       True
+  sums_layer_v2    50     Yes    No       86.90              9.67            6.83           2.33       True
+
+-----------------------
+InferenceType: MARGINAL
+-----------------------
+CPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   232     Yes   Yes       92.11              9.38           34.23          21.58       True
+     sums_layer   190     Yes   Yes       80.18              7.93           28.58          23.51       True
+  sums_layer_v2    66     Yes   Yes       39.87              9.04           25.96          23.96       True
+GPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   232     Yes   Yes      105.60             10.70           17.68           3.66       True
+     sums_layer   190     Yes   Yes       79.86              8.24            7.92           2.69       True
+  sums_layer_v2    66     Yes   Yes       38.01             10.40            8.32           2.64       True
+
+-----------------------
+InferenceType: MARGINAL-LOG
+-----------------------
+CPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   229     Yes    No      103.80              9.91           31.76          18.39       True
+     sums_layer   202     Yes    No      122.31              9.40           24.85          21.34       True
+  sums_layer_v2    78     Yes    No      100.92              8.96           28.46          21.15       True
+GPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   229     Yes    No      102.87             10.33           16.19           3.41       True
+     sums_layer   202     Yes    No       87.83             11.80            8.43           2.57       True
+  sums_layer_v2    78     Yes    No       41.46              9.00            8.63           2.49       True
+
+-----------------------
+InferenceType: MARGINAL-LOG
+-----------------------
+CPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   309     Yes   Yes      123.61             10.97           50.99          26.47       True
+     sums_layer   219     Yes   Yes       94.19              8.75           36.29          30.28       True
+  sums_layer_v2    95     Yes   Yes       51.78              9.28           38.48          30.11       True
+GPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   309     Yes   Yes      137.23             12.24           24.32           4.44       True
+     sums_layer   219     Yes   Yes       91.41             10.56           10.66           3.03       True
+  sums_layer_v2    95     Yes   Yes       48.12              9.55           11.05           2.87       True
+
+-----------------------
+InferenceType: MPE
+-----------------------
+CPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   156     Yes    No       72.06              8.40           18.48          12.99       True
+     sums_layer   174     Yes    No       73.44              7.60           17.82          13.69       True
+  sums_layer_v2    50     Yes    No       26.93              7.21           17.19          13.42       True
+GPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   156     Yes    No      183.60              8.95           10.21           2.79       True
+     sums_layer   174     Yes    No       80.42              7.85            6.03           2.26       True
+  sums_layer_v2    50     Yes    No       36.52              9.64            6.83           2.28       True
+
+-----------------------
+InferenceType: MPE
+-----------------------
+CPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   232     Yes   Yes      105.02             10.38           39.77          21.36       True
+     sums_layer   190     Yes   Yes       80.99              7.95           29.50          23.74       True
+  sums_layer_v2    66     Yes   Yes       37.38              8.58           28.97          23.73       True
+GPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   232     Yes   Yes      107.86             10.61           17.84           3.75       True
+     sums_layer   190     Yes   Yes       80.00              8.28            8.50           2.74       True
+  sums_layer_v2    66     Yes   Yes       36.60              9.88            8.01           2.63       True
+
+-----------------------
+InferenceType: MPE-LOG
+-----------------------
+CPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   165     Yes    No      198.91              8.74           21.42          13.05       True
+     sums_layer   177     Yes    No       74.64              7.58           16.86          13.08       True
+  sums_layer_v2    53     Yes    No       28.02              7.26           10.43          13.12       True
+GPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   165     Yes    No       76.08              9.23           10.73           2.84       True
+     sums_layer   177     Yes    No       84.73              7.98            6.21           2.18       True
+  sums_layer_v2    53     Yes    No       31.41              8.61            6.42           2.22       True
+
+-----------------------
+InferenceType: MPE-LOG
+-----------------------
+CPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   245     Yes   Yes       95.55              9.41           33.61          21.80       True
+     sums_layer   194     Yes   Yes       81.35              7.98           31.85          24.16       True
+  sums_layer_v2    70     Yes   Yes       38.58              8.75           28.46          24.10       True
+GPU          op  size indices   ivs  setup_time weights_init_time  first_run_time  rest_run_time    correct
+       par_sums   245     Yes   Yes      110.26             11.00           19.92           3.87       True
+     sums_layer   194     Yes   Yes       81.45              8.17            8.17           2.70       True
+  sums_layer_v2    70     Yes   Yes       37.84              9.95           15.37           2.72       True
