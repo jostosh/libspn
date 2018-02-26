@@ -70,39 +70,28 @@ __global__ void SubtractAndExpKernel(const T* logits,
                                      const int total_size)
 {
   // Uses shared mem, but turns out not to yield any significant speed-up...
-  // extern __shared__ __align__(sizeof(T)) unsigned char max_logits_shared[];
-  // T *smem = reinterpret_cast<T *>(max_logits_shared);
-  // Determine the 'row' in shared memory
-  //int tid, block_start, block_offset, row, max_idx;
-  int max_idx;
+  extern __shared__ __align__(sizeof(T)) unsigned char max_logits_shared[];
+  T *smem = reinterpret_cast<T *>(max_logits_shared);
   CUDA_1D_KERNEL_LOOP(x, total_size)
   {
     // Determine the 'row' in shared memory
-    // tid = threadIdx.x;
-    // block_start = x - tid;
-    // block_offset = block_start % num_cols;
-    // row = (block_offset + tid) / num_cols;
-    //
-    // if (tid == 0 || (block_offset + tid) % num_cols == 0)
-    // {
-    //   // Read the max value, and set it to 0 if infinite
-    //   T val = max_logits[x / num_cols];
-    //   val = isinf(val) ? static_cast<T>(0) : val;
-    //   max_logits[x / num_cols] = val;
-    //   smem[row] = val;
-    // }
+    const int tid = threadIdx.x;
+    const int block_start = x - tid;
+    const int block_offset = block_start % num_cols;
+    const int row = (block_offset + tid) / num_cols;
 
-    max_idx = x / num_cols;
-    if (x % num_cols == 0)
+    if (tid == 0 || (block_offset + tid) % num_cols == 0)
     {
-      T m = max_logits[max_idx];
-      m = isinf(m) ? static_cast<T>(0) : m;
-      max_logits[max_idx] = m;
+      // Read the max value, and set it to 0 if infinite
+      T val = max_logits[x / num_cols];
+      val = isinf(val) ? static_cast<T>(0) : val;
+      max_logits[x / num_cols] = val;
+      smem[row] = val;
     }
     __syncthreads();
 
     // Subtract and exponentialize
-    out[x] = exp(ldg(logits + x) - max_logits[max_idx]);
+    out[x] = exp(ldg(logits + x) - smem[row]);
   }
 }
 
@@ -188,11 +177,11 @@ class LogSumExpOpGPU : public OpKernel {
       //   <<<config.block_count, config.thread_per_block, 0, cu_stream>>>(
       //     reinterpret_cast<T*>(max_logits.flat<T>().data()), config);
 
-      // Subtracts max and exponentialize. Also replaces any infs in max with 0
+      // Subtracts max and exponentialize
       CudaLaunchConfig config = GetCudaLaunchConfig(logits_in_.NumElements(), d);
       const int smem_len = config.thread_per_block / cols + 1;
       SubtractAndExpKernel
-        <<<config.block_count, config.thread_per_block, 0,//smem_len * sizeof(T),
+        <<<config.block_count, config.thread_per_block, smem_len * sizeof(T),
            cu_stream>>>(
           reinterpret_cast<const T*>(logits_in_.flat<T>().data()),
           const_cast<T*>(max_logits.flat<T>().data()),
