@@ -16,6 +16,7 @@ import colorama as col
 import sys
 import scipy.misc
 import itertools
+from libspn.tests.profiler import profile_report
 col.init()
 
 op_module = tf.load_op_library('/home/jos/spn/libspn/libspn/ops/libspn_ops.so')
@@ -106,7 +107,7 @@ class PerformanceTest:
 
     def __init__(self, num_param_rows, num_param_cols, num_param_slices, out_size,
                  num_ops, num_runs, dtype,
-                 without_cpu, without_gpu, log_devs, file):
+                 without_cpu, without_gpu, log_devs, file, profile, profiles_dir):
         self.num_param_rows = num_param_rows
         self.num_param_cols = num_param_cols
         self.num_param_slices = num_param_slices
@@ -118,6 +119,9 @@ class PerformanceTest:
         self.without_gpu = without_gpu
         self.log_devs = log_devs
         self.file = file
+
+        self.profile = profile
+        self.profiles_dir = profiles_dir
 
         print1("Params:", file)
         print1("- num_param_rows=%s" % num_param_rows, file)
@@ -178,6 +182,14 @@ class PerformanceTest:
                     # np.testing.assert_array_almost_equal(out, true_out)
                 except AssertionError:
                     output_correct = False
+
+            if self.profile:
+                # Create a suitable filename suffix
+                fnm_suffix = op_name
+                fnm_suffix += ("_GPU" if on_gpu else "_CPU")
+                # Create a profiling report
+                profile_report(sess, ops, {params_pl: params}, self.profiles_dir,
+                               "sum_value_varying_sizes", fnm_suffix)
         # Return stats
         return OpTestResult(op_name, on_gpu, graph_size, setup_time,
                             run_times, output_correct, dtype)
@@ -255,7 +267,7 @@ def main():
                         help="Size of the output")
     parser.add_argument('--num-ops', default=200, type=int,
                         help="Num of ops used for tests")
-    parser.add_argument('--num-runs', default=100, type=int,
+    parser.add_argument('--num-runs', default=250, type=int,
                         help="Number of times each test is run")
     parser.add_argument('--log-devices', action='store_true',
                         help="Log on which device op is run. Affects run time!")
@@ -265,6 +277,10 @@ def main():
                         help="Do not run GPU tests")
     parser.add_argument('--save-to', default='', type=str,
                         help="Save results to file")
+    parser.add_argument('--profile', default=False, action='store_true',
+                        help="Run test one more time and profile")
+    parser.add_argument('--profiles-dir', default='profiles', type=str,
+                        help="Run test one more time and profile")
     dtype = tf.float32
     args = parser.parse_args()
 
@@ -283,7 +299,7 @@ def main():
                             args.out_size, args.num_ops,
                             args.num_runs, dtype,
                             args.without_cpu, args.without_gpu,
-                            args.log_devices, f)
+                            args.log_devices, f, args.profile, args.profiles_dir)
         t.run()
     except Exception as e:
         print("Error: ", e)
