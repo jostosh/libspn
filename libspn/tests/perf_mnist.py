@@ -468,7 +468,7 @@ def main():
     parser.add_argument('--save-to', default='', type=str,
                         help="Save results to file")
     parser.add_argument('--test-op', default='custom_reduce_logsum',
-                        choices=['custom_reduce_logsum', 'custom_gather_cols'])
+                        choices=['custom_reduce_logsum', 'custom_gather_cols', 'lru_cache'])
     parser.add_argument('--test-values', default=[0, 1], type=int, nargs='+')
     parser.add_argument('--log-flags', default=[0, 1], type=int, nargs='+')
     parser.add_argument('--inf-types', default=['MPE', 'MARGINAL'],
