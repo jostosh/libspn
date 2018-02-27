@@ -30,10 +30,10 @@ clean:
 	@python3 setup.py clean
 
 install:
-	@pip3 install --user .
+	@pip3 install .
 
 # Run build after install since dev-install doesn't do it
 # Run it after install, so that deps are installed
 dev-install:
-	@pip3 install --user -e .
+	@pip3 install -e .
 	$(MAKE) build

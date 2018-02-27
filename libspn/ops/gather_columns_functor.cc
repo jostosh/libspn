@@ -1,6 +1,7 @@
+#include "gather_columns_functor.h"
+
 #if GOOGLE_CUDA
 
-#include "gather_columns_functor.h"
 #include "tensorflow/core/framework/register_types.h"
 
 namespace tensorflow
@@ -28,8 +29,8 @@ TF_CALL_GPU_NUMBER_TYPES(DECLARE_GPU_SPECS);
 }  // namespace functor
 }  // namespace tensorflow
 
-#else
-
-#include "tensorflow/core/user_ops/gather_columns_functor.h"
+//#else
+//
+//#include "tensorflow/core/user_ops/gather_columns_functor.h"
 
 #endif  // GOOGLE_CUDA

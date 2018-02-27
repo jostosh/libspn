@@ -1,0 +1,8 @@
+Params:
+- batch_size=500
+- sum_sizes=[70, 80, 90, 100]
+- num_runs=100
+- num_parallel=10
+
+Running tests:
+--> par_sums: on_gpu=False, inputs_shape=(500, 100), inference=MARGINAL, log=False, IVs=No

@@ -179,13 +179,13 @@ class TestFileDataset(TestCase):
                 labels = []
                 with spn.session() as (sess, run):
                     while run():
-                        f = sess.run(fqueue.dequeue())
-                        files1.append(str(f, 'utf-8'))
+                        fval = sess.run(fqueue.dequeue())
+                        files1.append(str(fval, 'utf-8'))
                 with spn.session() as (sess, run):
                     while run():
-                        f, l = sess.run([ftensor, ltensor])
-                        files2.append(str(f, 'utf-8'))
-                        labels.append(str(l, 'utf-8'))
+                        fval, lval = sess.run([ftensor, ltensor])
+                        files2.append(str(fval, 'utf-8'))
+                        labels.append(str(lval, 'utf-8'))
                 self.assertEqual(files1, self.data_path(true_files))
                 self.assertEqual(files2, self.data_path(true_files))
                 self.assertEqual(labels, true_labels)

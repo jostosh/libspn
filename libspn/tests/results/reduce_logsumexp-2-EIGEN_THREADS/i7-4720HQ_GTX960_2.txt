@@ -1,0 +1,69 @@
+Params:
+- num_param_rows=10000
+- num_param_cols=1000
+- out_size=100
+- num_ops=200
+- num_runs=250
+- dtype=<dtype: 'float32'>
+
+Running tests:
+--> logsum_custom: on_gpu=False, params_shape=(10000, 1000), dtype=<dtype: 'float64'>
+--> logsum_custom: on_gpu=True, params_shape=(10000, 1000), dtype=<dtype: 'float64'>
+--> logsum_old: on_gpu=False, params_shape=(10000, 1000), dtype=<dtype: 'float64'>
+--> logsum_old: on_gpu=True, params_shape=(10000, 1000), dtype=<dtype: 'float64'>
+--> logsum_tf: on_gpu=False, params_shape=(10000, 1000), dtype=<dtype: 'float64'>
+--> logsum_tf: on_gpu=True, params_shape=(10000, 1000), dtype=<dtype: 'float64'>
+--> logsum_custom: on_gpu=False, params_shape=(10000, 1000), dtype=<dtype: 'float32'>
+--> logsum_custom: on_gpu=True, params_shape=(10000, 1000), dtype=<dtype: 'float32'>
+--> logsum_old: on_gpu=False, params_shape=(10000, 1000), dtype=<dtype: 'float32'>
+--> logsum_old: on_gpu=True, params_shape=(10000, 1000), dtype=<dtype: 'float32'>
+--> logsum_tf: on_gpu=False, params_shape=(10000, 1000), dtype=<dtype: 'float32'>
+--> logsum_tf: on_gpu=True, params_shape=(10000, 1000), dtype=<dtype: 'float32'>
+--> logsum_custom: on_gpu=False, params_shape=(10, 10000, 1000), dtype=<dtype: 'float64'>
+--> logsum_custom: on_gpu=True, params_shape=(10, 10000, 1000), dtype=<dtype: 'float64'>
+--> logsum_old: on_gpu=False, params_shape=(10, 10000, 1000), dtype=<dtype: 'float64'>
+--> logsum_old: on_gpu=True, params_shape=(10, 10000, 1000), dtype=<dtype: 'float64'>
+--> logsum_tf: on_gpu=False, params_shape=(10, 10000, 1000), dtype=<dtype: 'float64'>
+--> logsum_tf: on_gpu=True, params_shape=(10, 10000, 1000), dtype=<dtype: 'float64'>
+--> logsum_custom: on_gpu=False, params_shape=(10, 10000, 1000), dtype=<dtype: 'float32'>
+--> logsum_custom: on_gpu=True, params_shape=(10, 10000, 1000), dtype=<dtype: 'float32'>
+--> logsum_old: on_gpu=False, params_shape=(10, 10000, 1000), dtype=<dtype: 'float32'>
+--> logsum_old: on_gpu=True, params_shape=(10, 10000, 1000), dtype=<dtype: 'float32'>
+--> logsum_tf: on_gpu=False, params_shape=(10, 10000, 1000), dtype=<dtype: 'float32'>
+--> logsum_tf: on_gpu=True, params_shape=(10, 10000, 1000), dtype=<dtype: 'float32'>
+
+-----------------------
+2d_passthrough
+-----------------------
+CPU              op  size    dtype  setup_time  first_run_time  rest_run_time    correct
+     logsum_custom:   799  float32      450.75          125.70          73.89       True
+        logsum_old:  3399  float32     1611.33          337.37          44.36       True
+         logsum_tf:  2999  float32     1574.66          410.78          43.10       True
+     logsum_custom:   799  float64      333.04          132.64          83.34       True
+        logsum_old:  3399  float64     1619.75          542.17          58.79       True
+         logsum_tf:  2999  float64     1485.04          414.39          59.95       True
+GPU              op  size    dtype  setup_time  first_run_time  rest_run_time    correct
+     logsum_custom:   799  float32      329.98           69.89          16.46       True
+        logsum_old:  3399  float32     2003.80          409.55          21.38       True
+         logsum_tf:  2999  float32     1464.46          367.39          18.94       True
+     logsum_custom:   799  float64      330.16           78.92          29.08       True
+        logsum_old:  3399  float64     1743.99          328.77          31.90       True
+         logsum_tf:  2999  float64     1396.09          384.11          33.43       True
+
+-----------------------
+3d_passthrough
+-----------------------
+CPU              op  size    dtype  setup_time  first_run_time  rest_run_time    correct
+     logsum_custom:   799  float32      317.90          829.63         841.07       True
+        logsum_old:  3399  float32     1604.83          744.53         534.57       True
+         logsum_tf:  2999  float32     1486.22          775.28         521.04       True
+     logsum_custom:   799  float64      332.10          870.13         947.91       True
+        logsum_old:  3399  float64     2959.09         1309.05         689.21       True
+         logsum_tf:  2999  float64     1482.34          940.89         682.29       True
+GPU              op  size    dtype  setup_time  first_run_time  rest_run_time    correct
+     logsum_custom:   799  float32      326.83          221.84         161.84       True
+        logsum_old:  3399  float32     1575.92          482.11         179.03       True
+         logsum_tf:  2999  float32     1535.74          543.48         177.22       True
+     logsum_custom:   799  float64      324.52          345.27         305.42       True
+        logsum_old:  3399  float64     1651.69          635.96         322.18       True
+         logsum_tf:  2999  float64     1431.88          650.00         307.31       True

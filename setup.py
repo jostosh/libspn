@@ -7,6 +7,10 @@ import shutil
 import sys
 import os
 import subprocess
+import re
+import contextlib
+import tempfile
+
 
 # Ensure supported version of python is used
 if sys.version_info < (3, 4):
@@ -25,11 +29,13 @@ DEFAULT_COMPUTE_CAPABILITIES = ["3.5", "5.2", "6.1"]
 SOURCES_CUDA = ['gather_columns_functor_gpu.cu.cc',
                 'gather_columns_3d_functor_gpu.cu.cc',
                 'scatter_columns_functor_gpu.cu.cc',
-                'scatter_values_functor_gpu.cu.cc']
+                'scatter_values_functor_gpu.cu.cc',
+                'reduction_logsumexp_op_gpu.cu.cc']
 HEADERS_CUDA = ['gather_columns_functor_gpu.cu.h',
                 'gather_columns_3d_functor_gpu.cu.h',
                 'scatter_columns_functor_gpu.cu.h',
-                'scatter_values_functor_gpu.cu.h']
+                'scatter_values_functor_gpu.cu.h',
+                'reduction_logsumexp_op_gpu.cu.h']
 SOURCES = ['gather_columns.cc',
            'gather_columns_functor.cc',
            'gather_columns_3d.cc',
@@ -37,11 +43,13 @@ SOURCES = ['gather_columns.cc',
            'scatter_columns.cc',
            'scatter_columns_functor.cc',
            'scatter_values.cc',
-           'scatter_values_functor.cc']
+           'scatter_values_functor.cc',
+           'reduction_logsumexp.cc']
 HEADERS = ['gather_columns_functor.h',
            'gather_columns_3d_functor.h',
            'scatter_columns_functor.h',
-           'scatter_values_functor.h']
+           'scatter_values_functor.h',
+           'reduction_logsumexp_functor.h']
 
 
 ###############################
@@ -151,6 +159,7 @@ class BuildCommand(distutils.command.build.build):
                     '-DGOOGLE_CUDA=1',
                     '--expt-relaxed-constexpr',  # To silence harmless warnings
                     '-I', self._tf_includes,
+                    '-I', 'third_party',         # Some includes needed for third party kernels
                     # The below fixes a missing include in TF 1.4rc0
                     '-I', os.path.join(self._tf_includes, 'external', 'nsync', 'public')
                     ] +
@@ -194,6 +203,133 @@ class BuildCommand(distutils.command.build.build):
         except subprocess.CalledProcessError:
             os.sys.exit('ERROR: Build error!')
 
+    def _fix_missing_tf_headers(self):
+        """ A hacky way of fixing the missing TensorFlow headers:
+        If a header is not yet present, we fetch it from a clone of the git repo and put it in the
+        local TensorFlow pip installation.
+        """
+        # We only care about tensorflow/core/kernels/*.h patterns that are missing
+        regex = re.compile(
+            R"\#include \"(tensorflow\/core\/kernels\/(?:[a-zA-Z\_]+\/)*[a-zA-Z\_]+(?:\.cu)?\.h)")
+
+        def ensure_includes_exist(fnm):
+            with open(fnm, 'r') as f:
+                for line in f:
+                    match = regex.match(line)
+                    if not match:
+                        continue
+                    path = match.group(1)
+                    if path and not os.path.exists(os.path.join(self._tf_includes, path)):
+                        print("The include {} was not located in your TensorFlow include dir..."
+                              .format(path))
+                        tf_dir = self._tf_repository_path(tmpdirname)
+                        os.makedirs(os.path.dirname(os.path.join(self._tf_includes, path)),
+                                    exist_ok=True)
+                        shutil.copyfile(
+                            os.path.join(tf_dir, path),
+                            os.path.join(self._tf_includes, path)
+                        )
+                        assert os.path.exists(os.path.join(self._tf_includes, path))
+                    # Do this recursively on the includes in the new file
+                    ensure_includes_exist(os.path.join(self._tf_includes, path))
+
+        with self.tempdir() as tmpdirname:
+            for fnm in HEADERS_CUDA + SOURCES_CUDA + HEADERS + SOURCES:
+                ensure_includes_exist(fnm)
+
+    def _ensure_cucomplex_h_available(self):
+        """ Ensure that cuComlex.h is available under cuda/include """
+        project_path = os.path.dirname(os.path.realpath(__file__))
+        cuda_extras = os.path.join(project_path, 'third_party', 'cuda', 'include')
+        os.makedirs(cuda_extras, exist_ok=True)
+        path = os.path.join(cuda_extras, 'cuComplex.h')
+        if not os.path.exists(path):
+            shutil.copyfile(
+                os.path.join(self._cuda_home, 'include', 'cuComplex.h'),
+                path
+            )
+
+    @staticmethod
+    def _ensure_cub_available():
+        """ Ensures the cub library is available """
+        project_path = os.path.dirname(os.path.realpath(__file__))
+        external = os.path.join(project_path, 'third_party', 'external')
+        os.makedirs(external, exist_ok=True)
+        cub_path = os.path.join(external, 'cub_archive')
+        version = 'v1.7.4'  # TODO maybe this should be configured elsewhere
+        if not os.path.exists(cub_path):
+            os.chdir(external)
+            subprocess.check_call(['wget', 'https://github.com/NVlabs/cub/archive/{}.zip'
+                                  .format(version)])
+            subprocess.check_call(['unzip', '{}.zip'.format(version)])
+            shutil.move('cub-{}'.format(version[1:]), 'cub_archive')
+            subprocess.check_call(['rm', '{}.zip'.format(version)])
+        # Going back to 'third_party' dir forces the filesystem to refresh, otherwise nvcc won't
+        # find the includes from cub
+        os.chdir('..')
+        os.chdir(project_path)
+
+    @staticmethod
+    def _tf_repository_path(tmpdirname):
+        """ Returns a path to TF repo. This is used for copying some missing headers. It will look
+        for a dot module containing TF, if this does not succeed, we fetch a clone in a temporary
+        directory
+        """
+        tf_dot = os.path.join('modules', '50_dot-module-gpu', 'tmp', 'tensorflow')
+        if 'DOT_DIR' in os.environ and os.path.exists(os.path.join(os.environ['DOT_DIR'], tf_dot)):
+            return os.path.join(os.environ['DOT_DIR'], tf_dot)
+        os.chdir(tmpdirname)
+        if not os.path.exists(os.path.join(tmpdirname, 'tensorflow')):
+            print("Fetching temporary git clone of TensorFlow at " + tmpdirname)
+            subprocess.check_call(['git', 'clone', 'https://github.com/tensorflow/tensorflow.git'])
+            os.chdir(os.path.join(tmpdirname, 'tensorflow'))
+            subprocess.check_call(['git', 'checkout', BuildCommand._tf_version_to_branch()])
+        return os.path.join(tmpdirname, 'tensorflow')
+
+    @staticmethod
+    @contextlib.contextmanager
+    def cd(newdir, cleanup=lambda: True):
+        prevdir = os.getcwd()
+        os.chdir(os.path.expanduser(newdir))
+        try:
+            yield
+        finally:
+            os.chdir(prevdir)
+            cleanup()
+
+    @staticmethod
+    @contextlib.contextmanager
+    def tempdir():
+        """ Creates tmp dir and cleans up even when exception is thrown """
+        dirpath = tempfile.mkdtemp()
+
+        def cleanup():
+            shutil.rmtree(dirpath)
+
+        with BuildCommand.cd(dirpath, cleanup):
+            yield dirpath
+
+    @staticmethod
+    def _tf_version_to_branch():
+        import tensorflow as tf
+        if tf.__version__ == '1.2.0':
+            return 'v1.2.0-rc2'
+        if tf.__version__ == '1.2.1':
+            return 'v1.2.1'
+        if tf.__version__ == '1.3.0':
+            return 'v1.3.0-rc2'
+        if tf.__version__ == '1.3.1':
+            return 'v1.3.1'
+        if tf.__version__ == '1.4.0':
+            return 'v1.4.0-rc2'
+        if tf.__version__ == '1.4.1':
+            return 'v1.4.1'
+        if tf.__version__ == '1.5.0':
+            return 'v1.5.0-rc1'
+        raise ValueError(
+            "Version {} does not have a corresponding git branch configured."
+            .format(tf.__version__))
+
     def _is_dirty(self, target, sources):
         """Verify if changes have been made to sources and target must
         be re-built."""
@@ -206,8 +342,11 @@ class BuildCommand(distutils.command.build.build):
         # Make dirs
         os.makedirs(BUILD_DIR, exist_ok=True)
         # Should rebuild?
-        if self._is_dirty(TARGET, SOURCES + HEADERS +
-                          SOURCES_CUDA + HEADERS_CUDA):
+        if self._is_dirty(TARGET, SOURCES + HEADERS + SOURCES_CUDA + HEADERS_CUDA):
+            self._ensure_cucomplex_h_available()
+            self._ensure_cub_available()
+            self._fix_missing_tf_headers()
+
             # Compile cuda
             for s, h, o in zip(SOURCES_CUDA, HEADERS_CUDA, OBJECTS_CUDA):
                 if self._is_dirty(o, [s, h]):
@@ -224,6 +363,7 @@ class BuildCommand(distutils.command.build.build):
         libspn.ops.gather_cols_3d
         libspn.ops.scatter_cols
         libspn.ops.scatter_values
+        libspn.ops.reduce_logsumexp
         print("Custom ops loaded correctly!")
 
     def run(self):

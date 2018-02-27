@@ -23,3 +23,7 @@ custom_scatter_cols = True
 custom_scatter_values = True
 """Whether to use custom op for implementing
 :meth:`~libspn.utils.scatter_values`."""
+
+custom_reduce_logsum = True
+"""Whether to use custom op for implementing
+:meth:`~libspn.utils.reduce_logsum`."""

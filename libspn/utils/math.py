@@ -428,6 +428,56 @@ def normalize_tensor(tensor, name=None):
         return tf.truediv(tensor, s)
 
 
+def reduce_log_sum_v2(log_input, name=None):
+    """Calculate log of a sum of elements of a tensor containing log values
+    row-wise. This function implements this through a series of TF ops. See
+
+    Args:
+        log_input (Tensor): Tensor containing log values.
+
+    Returns:
+        Tensor: The reduced tensor of shape ``(None, 1)``, where the first
+        dimension corresponds to the first dimension of ``log_input``.
+    """
+    with tf.name_scope(name, "reduce_log_sum", [log_input]):
+        log_max = tf.reduce_max(log_input, -1, keepdims=True)
+        # Compute the value assuming at least one input is not -inf
+        log_rebased = tf.subtract(log_input, log_max)
+        out_normal = log_max + tf.log(tf.reduce_sum(tf.exp(log_rebased),
+                                                    -1, keepdims=True))
+        # Check if all input values in a row are -inf (all non-log inputs are 0)
+        # and produce output for that case
+        # We use float('inf') for compatibility with Python<3.5
+        # For Python>=3.5 we can use math.inf instead
+        all_zero = tf.equal(log_max,
+                            tf.constant(-float('inf'), dtype=log_input.dtype))
+        out_zeros = tf.fill(tf.shape(out_normal),
+                            tf.constant(-float('inf'), dtype=log_input.dtype))
+        # Choose the output for each row
+        return tf.where(all_zero, out_zeros, out_normal)
+
+
+def reduce_log_sum(log_input, name=None):
+    """Computes the log of a sum of elements of a tensor containing the
+    log-values on the last axis. Uses a custom TF Op.
+
+    Args:
+        log_input (Tensor): Tensor containing log values.
+
+    Returns:
+        Tensor: The reduced tensor of shape ``(d_0, d_1, ..., d_{n-1}, 1)``, where the d_i
+        corresponds to the dimension i of ``log_input``.
+    """
+    if conf.custom_reduce_logsum:
+        with tf.name_scope(name, "reduce_log_sum", [log_input]):
+            tensor = tf.convert_to_tensor(log_input)
+            tensor.get_shape().with_rank_at_least(2)
+            tensor.get_shape().with_rank_at_most(3)
+            return ops.reduce_logsumexp(tensor)
+    else:
+        return reduce_log_sum_v2(log_input, name=name)
+
+
 def normalize_tensor_2D(tensor, num_weights=1, num_sums=1, name=None):
     """Reshape weight vector to a 2D tensor, and normalize such each row sums to 1.
 
@@ -442,71 +492,6 @@ def normalize_tensor_2D(tensor, num_weights=1, num_sums=1, name=None):
         tensor = tf.reshape(tensor, [num_sums, num_weights])
         s = tf.expand_dims(tf.reduce_sum(tensor, 1), -1)
         return tf.truediv(tensor, s)
-
-
-def reduce_log_sum(log_input, name=None):
-    """Calculate log of a sum of elements of a tensor containing log values
-    row-wise.
-
-    Args:
-        log_input (Tensor): Tensor containing log values.
-
-    Returns:
-        Tensor: The reduced tensor of shape ``(None, 1)``, where the first
-        dimension corresponds to the first dimension of ``log_input``.
-    """
-    with tf.name_scope(name, "reduce_log_sum", [log_input]):
-        log_max = tf.reduce_max(log_input, 1, keep_dims=True)
-        # Compute the value assuming at least one input is not -inf
-        log_rebased = tf.subtract(log_input, log_max)
-        out_normal = log_max + tf.log(tf.reduce_sum(tf.exp(log_rebased),
-                                                    1, keep_dims=True))
-        # Check if all input values in a row are -inf (all non-log inputs are 0)
-        # and produce output for that case
-        # We use float('inf') for compatibility with Python<3.5
-        # For Python>=3.5 we can use math.inf instead
-        all_zero = tf.equal(log_max,
-                            tf.constant(-float('inf'), dtype=log_input.dtype))
-        out_zeros = tf.fill(tf.shape(out_normal),
-                            tf.constant(-float('inf'), dtype=log_input.dtype))
-        # Choose the output for each row
-        return tf.where(all_zero, out_zeros, out_normal)
-
-
-# log(x + y) = log(x) + log(1 + exp(log(y) - log(x)))
-def reduce_log_sum_3D(log_input, transpose=True, name=None):
-    """Calculate log of a sum of elements of a 3D tensor containing log values
-    row-wise, with each slice representing a single sum node.
-
-    Args:
-        log_input (Tensor): Tensor containing log values.
-
-    Returns:
-        Tensor: The reduced tensor of shape ``(None, num_sums)``, where the first
-         and the second dimensions corresponds to the second and first  dimensions
-         of ``log_input``.
-    """
-    with tf.name_scope(name, "reduce_log_sum_3D", [log_input]):
-        # log(x)
-        log_max = tf.reduce_max(log_input, axis=-1, keep_dims=True)
-        # Compute the value assuming at least one input is not -inf
-        # r = log(y) - log(x)
-        log_rebased = tf.subtract(log_input, log_max)
-        # log(x) + log(1 + exp(r))???
-        out_normal = log_max + tf.log(tf.reduce_sum(tf.exp(log_rebased),
-                                                    axis=-1, keep_dims=True))
-        # Check if all input values in a row are -inf (all non-log inputs are 0)
-        # and produce output for that case
-        all_zero = tf.equal(log_max,
-                            tf.constant(-float('inf'), dtype=log_input.dtype))
-        out_zeros = tf.fill(tf.shape(out_normal),
-                            tf.constant(-float('inf'), dtype=log_input.dtype))
-        # Choose the output for each row
-        if transpose:
-            return tf.transpose(tf.squeeze(tf.where(all_zero, out_zeros,
-                                                    out_normal), -1))
-        else:
-            return tf.squeeze(tf.where(all_zero, out_zeros, out_normal), -1)
 
 
 def concat_maybe(values, axis, name='concat'):

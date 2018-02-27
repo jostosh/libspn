@@ -333,7 +333,7 @@ class ParSums(OpNode):
                                                                 weight_tensor)
         else:
             values_weighted = tf.expand_dims(values, axis=1) + weight_tensor
-        return utils.reduce_log_sum_3D(values_weighted, transpose=False)
+        return utils.reduce_log_sum(values_weighted)
 
     def _compute_mpe_value(self, weight_tensor, ivs_tensor, *value_tensors):
         weight_tensor, ivs_tensor, values = self._compute_value_common(
