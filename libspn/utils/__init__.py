@@ -8,6 +8,7 @@
 # Import public interface of the library
 
 from .utils import decode_bytes_array
+from .utils import memoize
 from .math import gather_cols
 from .math import gather_cols_3d
 from .math import scatter_cols
@@ -35,11 +36,12 @@ from .serialization import str2type, type2str
 from .enum import Enum
 
 # All
-__all__ = ['decode_bytes_array', 'scatter_cols', 'scatter_values',
-           'gather_cols', 'gather_cols_3d', 'ValueType', 'broadcast_value',
-           'normalize_tensor', 'normalize_tensor_2D', 'reduce_log_sum',
-           'concat_maybe', 'split_maybe', 'StirlingNumber',
-           'StirlingRatio', 'Stirling', 'random_partition', 'all_partitions',
+__all__ = ['decode_bytes_array', 'scatter_cols', 'scatter_values', 'memoize',
+           'scatter_cols', 'gather_cols', 'ValueType',
+           'broadcast_value', 'normalize_tensor',
+           'reduce_log_sum', 'concat_maybe', 'split_maybe',
+           'StirlingNumber', 'StirlingRatio', 'Stirling',
+           'random_partition', 'all_partitions',
            'random_partitions_by_sampling',
            'random_partitions_by_enumeration',
            'random_partitions',
