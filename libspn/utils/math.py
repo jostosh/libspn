@@ -116,8 +116,7 @@ def gather_cols(params, indices, name=None):
                 if conf.custom_gather_cols:
                     return ops.gather_cols(params, indices)
                 else:
-                    return tf.transpose(tf.gather_nd(tf.transpose(params),
-                                                     np.expand_dims(indices, 1)))
+                    return tf.gather(params, indices, axis=1)
 
 
 def gather_cols_3d(params, indices, pad_elem=0, name=None):
