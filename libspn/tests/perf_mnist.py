@@ -172,13 +172,16 @@ class TestResults:
         self.gpu_results = gpu_results
 
     def print(self, file):
+        print1("\n-----------------------", file)
+        print1("%s" % self.test_name, file)
+        print1("-----------------------", file)
         cols = [
             'op_name',
             'on_gpu',
             'multi_nodes',
             'spn_size',
             'tf_size',
-            'memroy_used',
+            'memory_used',
             'input_dist',
             'setup_time',
             'weights_init_time',
@@ -468,7 +471,7 @@ def main():
     parser.add_argument('--save-to', default='', type=str,
                         help="Save results to file")
     parser.add_argument('--test-op', default='custom_reduce_logsum',
-                        choices=['custom_reduce_logsum', 'custom_gather_cols', 'lru_cache'])
+                        choices=['custom_reduce_logsum', 'custom_gather_cols', 'memoize'])
     parser.add_argument('--test-values', default=[0, 1], type=int, nargs='+')
     parser.add_argument('--log-flags', default=[0, 1], type=int, nargs='+')
     parser.add_argument('--inf-types', default=['MPE', 'MARGINAL'],
