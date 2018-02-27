@@ -294,7 +294,9 @@ class ParSums(OpNode):
             return None
         return self._compute_scope(weight_scopes, ivs_scopes, *value_scopes)
 
-    def _compute_value_common(self, weight_tensor, ivs_tensor, *value_tensors):
+    @utils.memoize
+    def _compute_value_common(self, cwise_op, weight_tensor, ivs_tensor, *value_tensors,
+                              weighted=True):
         """Common actions when computing value."""
         # Check inputs
         if not self._values:
@@ -305,63 +307,40 @@ class ParSums(OpNode):
         weight_tensor, ivs_tensor, *value_tensors = self._gather_input_tensors(
             weight_tensor, ivs_tensor, *value_tensors)
         values = utils.concat_maybe(value_tensors, 1)
-        return weight_tensor, ivs_tensor, values
+
+        if self._ivs:
+            reshape = (-1, self._num_sums, values.shape[1].value)
+            ivs_tensor = tf.reshape(ivs_tensor, shape=reshape)
+
+        values = tf.expand_dims(values, 1)
+
+        # Component wise application of IVs
+        values_selected = cwise_op(values, ivs_tensor) if self._ivs else values
+
+        # Component wise application of weights
+        values_weighted = cwise_op(values_selected, weight_tensor) if weighted else values_selected
+
+        return weight_tensor, ivs_tensor, values_weighted
 
     def _compute_value(self, weight_tensor, ivs_tensor, *value_tensors):
-        weight_tensor, ivs_tensor, values = self._compute_value_common(
-            weight_tensor, ivs_tensor, *value_tensors)
-        if self._ivs:
-            # IVs tensor shape = (Batch X (num_sums * num_vals))
-            # reshape it to (Batch X num_sums X num_feat)
-            reshape = (-1, self._num_sums, values.shape[1].value)
-            ivs_tensor = tf.reshape(ivs_tensor, shape=reshape)
-            values_selected_weighted = tf.expand_dims(values, axis=1) * (
-                                       ivs_tensor * weight_tensor)
-            return tf.reduce_sum(values_selected_weighted, axis=2)
-        else:
-            return tf.matmul(values, weight_tensor, transpose_b=True)
+        weight_tensor, ivs_tensor, values_selected_weighted = self._compute_value_common(
+            tf.multiply, weight_tensor, ivs_tensor, *value_tensors, weighted=True)
+        return tf.reduce_sum(values_selected_weighted, axis=-1)
 
     def _compute_log_value(self, weight_tensor, ivs_tensor, *value_tensors):
-        weight_tensor, ivs_tensor, values = self._compute_value_common(
-            weight_tensor, ivs_tensor, *value_tensors)
-        if self._ivs:
-            # IVs tensor shape = (Batch X (num_sums * num_vals))
-            # reshape it to (Batch X num_sums X num_feat)
-            reshape = (-1, self._num_sums, values.shape[1].value)
-            ivs_tensor = tf.reshape(ivs_tensor, shape=reshape)
-            values_weighted = tf.expand_dims(values, axis=1) + (ivs_tensor +
-                                                                weight_tensor)
-        else:
-            values_weighted = tf.expand_dims(values, axis=1) + weight_tensor
-        return utils.reduce_log_sum(values_weighted)
+        weight_tensor, ivs_tensor, values_selected_weighted = self._compute_value_common(
+            tf.add, weight_tensor, ivs_tensor, *value_tensors, weighted=True)
+        return utils.reduce_log_sum(values_selected_weighted)
 
     def _compute_mpe_value(self, weight_tensor, ivs_tensor, *value_tensors):
-        weight_tensor, ivs_tensor, values = self._compute_value_common(
-            weight_tensor, ivs_tensor, *value_tensors)
-        if self._ivs:
-            # IVs tensor shape = (Batch X (num_sums * num_vals))
-            # reshape it to (Batch X num_sums X num_feat)
-            reshape = (-1, self._num_sums, values.shape[1].value)
-            ivs_tensor = tf.reshape(ivs_tensor, shape=reshape)
-            values_weighted = tf.expand_dims(values, axis=1) * (ivs_tensor *
-                                                                weight_tensor)
-        else:
-            values_weighted = tf.expand_dims(values, axis=1) * weight_tensor
-        return tf.reduce_max(values_weighted, axis=2)
+        weight_tensor, ivs_tensor, values_selected_weighted = self._compute_value_common(
+            tf.multiply, weight_tensor, ivs_tensor, *value_tensors, weighted=True)
+        return tf.reduce_max(values_selected_weighted, axis=-1)
 
     def _compute_log_mpe_value(self, weight_tensor, ivs_tensor, *value_tensors):
-        weight_tensor, ivs_tensor, values = self._compute_value_common(
-            weight_tensor, ivs_tensor, *value_tensors)
-        if self._ivs:
-            # IVs tensor shape = (Batch X (num_sums * num_vals))
-            # reshape it to (Batch X num_sums X num_feat)
-            reshape = (-1, self._num_sums, values.shape[1].value)
-            ivs_tensor = tf.reshape(ivs_tensor, shape=reshape)
-            values_weighted = tf.expand_dims(values, axis=1) + (ivs_tensor +
-                                                                weight_tensor)
-        else:
-            values_weighted = tf.expand_dims(values, axis=1) + weight_tensor
-        return tf.reduce_max(values_weighted, axis=2)
+        weight_tensor, ivs_tensor, values_selected_weighted = self._compute_value_common(
+            tf.add, weight_tensor, ivs_tensor, *value_tensors, weighted=True)
+        return tf.reduce_max(values_selected_weighted, axis=-1)
 
     def _compute_mpe_path_common(self, values_weighted, counts, weight_value,
                                  ivs_value, *value_values):
@@ -382,56 +361,27 @@ class ParSums(OpNode):
     def _compute_mpe_path(self, counts, weight_value, ivs_value, *value_values,
                           add_random=None, use_unweighted=False):
         # Get weighted, IV selected values
-        weight_value, ivs_value, values = self._compute_value_common(
-            weight_value, ivs_value, *value_values)
-        if self._ivs:
-            # IVs tensor shape = (Batch X (num_sums * num_vals))
-            # reshape it to (Batch X num_sums X num_feat)
-            reshape = (-1, self._num_sums, values.shape[1].value)
-            ivs_value = tf.reshape(ivs_value, shape=reshape)
-            values_weighted = tf.expand_dims(values, axis=1) * (ivs_value *
-                                                                weight_value)
-        else:
-            values_weighted = tf.expand_dims(values, axis=1) * weight_value
+        weight_tensor, ivs_tensor, values_selected_weighted = self._compute_value_common(
+            tf.multiply, weight_value, ivs_value, *value_values, weighted=True)
         return self._compute_mpe_path_common(
-             values_weighted, counts, weight_value, ivs_value, *value_values)
+            values_selected_weighted, counts, weight_value, ivs_value, *value_values)
 
     def _compute_log_mpe_path(self, counts, weight_value, ivs_value,
                               *value_values, add_random=None,
                               use_unweighted=False):
         # Get weighted, IV selected values
-        weight_value, ivs_value, values = self._compute_value_common(
-            weight_value, ivs_value, *value_values)
-        if self._ivs:
-            # IVs tensor shape = (Batch X (num_sums * num_vals))
-            # reshape it to (Batch X num_sums X num_feat)
-            reshape = (-1, self._num_sums, values.shape[1].value)
-            ivs_value = tf.reshape(ivs_value, shape=reshape)
-
-            # WARN USING UNWEIGHTED VALUE
-            if not use_unweighted or any(v.node.is_var for v in self._values):
-                values_weighted = tf.expand_dims(values, axis=1) + (ivs_value +
-                                                                    weight_value)
-            else:
-                # / USING UNWEIGHTED VALUE
-                values_weighted = tf.expand_dims(values, axis=1) + ivs_value
-        else:
-            # WARN USING UNWEIGHTED VALUE
-            if not use_unweighted or any(v.node.is_var for v in self._values):
-                values_weighted = tf.expand_dims(values, axis=1) + weight_value
-            else:
-                # / USING UNWEIGHTED VALUE
-                values_weighted = tf.tile(tf.expand_dims(values, axis=1),
-                                          [1, self._num_sums, 1])
+        weighted = not use_unweighted or any(v.node.is_var for v in self._values)
+        weight_tensor, ivs_tensor, values_selected_weighted = self._compute_value_common(
+            tf.add, weight_value, ivs_value, *value_values, weighted=weighted)
 
         # WARN ADDING RANDOM NUMBERS
         if add_random is not None:
-            values_weighted = tf.add(values_weighted, tf.random_uniform(
-                shape=(tf.shape(values_weighted)[0], 1,
-                       values_weighted.shape[2].value),
+            values_selected_weighted = tf.add(values_selected_weighted, tf.random_uniform(
+                shape=(tf.shape(values_selected_weighted)[0], 1,
+                       values_selected_weighted.shape[2].value),
                 minval=0, maxval=add_random,
                 dtype=conf.dtype))
         # /ADDING RANDOM NUMBERS
 
         return self._compute_mpe_path_common(
-            values_weighted, counts, weight_value, ivs_value, *value_values)
+            values_selected_weighted, counts, weight_value, ivs_value, *value_values)
