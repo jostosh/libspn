@@ -67,7 +67,7 @@ def memoize(f):
     memo = {}
 
     def helper(*args, **kwargs):
-        if not spn.conf.lru_cache:
+        if not spn.conf.memoize:
             return f(*args, **kwargs)
         key = _make_key(args, kwargs, typed=True)
         if key not in memo:

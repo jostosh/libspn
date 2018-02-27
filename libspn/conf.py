@@ -24,11 +24,11 @@ custom_scatter_values = True
 """Whether to use custom op for implementing
 :meth:`~libspn.utils.scatter_values`."""
 
-custom_reduce_logsum = True
+custom_reduce_logsum = False
 """Whether to use custom op for implementing
 :meth:`~libspn.utils.reduce_logsum`."""
 
-lru_cache = True
-"""Whether to use LRU caches to function 
+memoize = False
+"""Whether to use memoization for function 
 return values in successive calls for reduced
 graph size."""
