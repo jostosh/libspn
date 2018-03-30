@@ -20,11 +20,11 @@ def printc(string):
     print(COLOR + string + ENDC)
 
 
-class TestDenseSPNGeneratorMultiNodes(TestCase):
+class TestDenseSPNGeneratorLayerNodes(TestCase):
 
     def test_generte_set(self):
         """Generation of sets of inputs with __generate_set"""
-        gen = spn.DenseSPNGeneratorMultiNodes(num_decomps=2,
+        gen = spn.DenseSPNGeneratorLayerNodes(num_decomps=2,
                                               num_subsets=3,
                                               num_mixtures=2)
         v1 = spn.IVs(num_vars=2, num_vals=4)
@@ -32,7 +32,7 @@ class TestDenseSPNGeneratorMultiNodes(TestCase):
         v3 = spn.ContVars(num_vars=2, name="ContVars2")
         s1 = spn.Sum(v3)
         n1 = spn.Concat(v2)
-        out = gen._DenseSPNGeneratorMultiNodes__generate_set([spn.Input(v1, [0, 3, 2, 6, 7]),
+        out = gen._DenseSPNGeneratorLayerNodes__generate_set([spn.Input(v1, [0, 3, 2, 6, 7]),
                                                               spn.Input(v2, [1, 2]),
                                                               spn.Input(s1, None),
                                                               spn.Input(n1, None)])
@@ -47,7 +47,7 @@ class TestDenseSPNGeneratorMultiNodes(TestCase):
 
     def test_generte_set_errors(self):
         """Detecting structure errors in __generate_set"""
-        gen = spn.DenseSPNGeneratorMultiNodes(num_decomps=2,
+        gen = spn.DenseSPNGeneratorLayerNodes(num_decomps=2,
                                               num_subsets=3,
                                               num_mixtures=2)
         v1 = spn.IVs(num_vars=2, num_vals=4)
@@ -57,7 +57,7 @@ class TestDenseSPNGeneratorMultiNodes(TestCase):
         n1 = spn.Concat(v2)
 
         with self.assertRaises(spn.StructureError):
-            gen._DenseSPNGeneratorMultiNodes__generate_set([spn.Input(v1, [0, 3, 2, 6, 7]),
+            gen._DenseSPNGeneratorLayerNodes__generate_set([spn.Input(v1, [0, 3, 2, 6, 7]),
                                                             spn.Input(v2, [1, 2]),
                                                             spn.Input(s1, None),
                                                             spn.Input(n1, None)])
@@ -65,10 +65,9 @@ class TestDenseSPNGeneratorMultiNodes(TestCase):
     def tearDown(self):
         tf.reset_default_graph()
 
-    def generic_dense_test(self, name, num_decomps, num_subsets, num_mixtures,
-                           input_dist, num_input_mixtures, balanced, multi_nodes,
-                           case):
-        """A generic test for DenseSPNGeneratorMultiNodes."""
+    def generic_dense_test(self, num_decomps, num_subsets, num_mixtures, input_dist,
+                           num_input_mixtures, balanced, node_type, case):
+        """A generic test for DenseSPNGeneratorLayerNodes."""
         self.tearDown()
 
         # Input parameters
@@ -80,16 +79,16 @@ class TestDenseSPNGeneratorMultiNodes(TestCase):
         inputs = [spn.IVs(num_vars=num_vars, num_vals=num_vals, name="IVs%s" % i)
                   for i in range(num_inputs)]
 
-        gen = spn.DenseSPNGeneratorMultiNodes(num_decomps=num_decomps,
+        gen = spn.DenseSPNGeneratorLayerNodes(num_decomps=num_decomps,
                                               num_subsets=num_subsets,
                                               num_mixtures=num_mixtures,
                                               input_dist=input_dist,
                                               balanced=balanced,
                                               num_input_mixtures=num_input_mixtures,
-                                              multi_nodes=multi_nodes)
+                                              node_type=node_type)
 
         # Generating SPN
-        root = gen.generate(*inputs)
+        root = gen.generate(*inputs, root_name="root")
 
         # Generating random weights
         with tf.name_scope("Weights"):
@@ -118,10 +117,13 @@ class TestDenseSPNGeneratorMultiNodes(TestCase):
         printc("- num_subsets: %s" % num_subsets)
         printc("- num_mixtures: %s" % num_mixtures)
         printc("- input_dist: %s" % ("MIXTURE" if input_dist ==
-               spn.DenseSPNGeneratorMultiNodes.InputDist.MIXTURE else "RAW"))
+               spn.DenseSPNGeneratorLayerNodes.InputDist.MIXTURE else "RAW"))
         printc("- balanced: %s" % balanced)
         printc("- num_input_mixtures: %s" % num_input_mixtures)
-        printc("- multi_nodes: %s" % multi_nodes)
+        printc("- node_type: %s" % ("SINGLE" if node_type ==
+               spn.DenseSPNGeneratorLayerNodes.NodeType.SINGLE else "BLOCK" if
+               node_type == spn.DenseSPNGeneratorLayerNodes.NodeType.BLOCK else
+               "LAYER"))
 
         # Creating session
         with tf.Session() as sess:
@@ -159,29 +161,29 @@ class TestDenseSPNGeneratorMultiNodes(TestCase):
         num_subsets = [2, 3, 6]
         num_mixtures = [1, 2]
         num_input_mixtures = [1, 2]
-        input_dist = [spn.DenseSPNGeneratorMultiNodes.InputDist.MIXTURE,
-                      spn.DenseSPNGeneratorMultiNodes.InputDist.RAW]
+        input_dist = [spn.DenseSPNGeneratorLayerNodes.InputDist.MIXTURE,
+                      spn.DenseSPNGeneratorLayerNodes.InputDist.RAW]
         balanced = [True, False]
-        multi_nodes = [True, False]
-        name = ["mixture", "raw"]
+        node_type = [spn.DenseSPNGeneratorLayerNodes.NodeType.SINGLE,
+                     spn.DenseSPNGeneratorLayerNodes.NodeType.BLOCK,
+                     spn.DenseSPNGeneratorLayerNodes.NodeType.LAYER]
         case = 0
 
         for n_dec in num_decomps:
             for n_sub in num_subsets:
                 for n_mix in num_mixtures:
                     for n_imix in num_input_mixtures:
-                        for dist, n in zip(input_dist, name):
+                        for dist in input_dist:
                             for bal in balanced:
-                                for m_nodes in multi_nodes:
+                                for n_type in node_type:
                                     case += 1
-                                    self.generic_dense_test(name=n,
-                                                            num_decomps=n_dec,
+                                    self.generic_dense_test(num_decomps=n_dec,
                                                             num_subsets=n_sub,
                                                             num_mixtures=n_mix,
                                                             input_dist=dist,
                                                             num_input_mixtures=n_imix,
                                                             balanced=bal,
-                                                            multi_nodes=m_nodes,
+                                                            node_type=n_type,
                                                             case=case)
 
 
