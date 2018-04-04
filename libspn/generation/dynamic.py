@@ -23,6 +23,7 @@ class DynamicSPNComponent:
     class Step:
 
         def __init__(self, root_nodes, var_nodes, time):
+            """Represents a single time step """
             self.time = time
             self.root_nodes = root_nodes
             self.var_nodes = var_nodes
@@ -30,6 +31,7 @@ class DynamicSPNComponent:
     class InterfaceNode:
 
         def __init__(self, name, root_index, indices=None):
+            """An interface is purely symbolic and acts as a placeholder while building DSPNs """
             self.name = name
             self.indices = indices
             self.root_index = root_index
@@ -37,6 +39,8 @@ class DynamicSPNComponent:
     class TemplateNode:
 
         def __init__(self, type, name, inputs=None, weights=None, interface=None, **kwargs):
+            """A template node can be seen as a Node factory, ready to make an instance of the
+            given type and configuration at any time step. """
             self._type = type
             self._name = name
             self._kwargs = kwargs
@@ -49,6 +53,7 @@ class DynamicSPNComponent:
 
         @property
         def interface_ancestor(self):
+            """Whether this is an ancestor of an interface node """
             if self.takes_interface:
                 return True
             if self.has_inputs:
@@ -68,6 +73,7 @@ class DynamicSPNComponent:
             return self._inputs
 
         def build(self, time, input_instances=None, interface_instances=None, is_first=False):
+            """Creates a Node instance """
             input_tuples = []
             if self.has_inputs:
                 if not input_instances:
@@ -92,10 +98,12 @@ class DynamicSPNComponent:
 
         @property
         def takes_interface(self):
+            """Whether this node has an interface node as input """
             return self._interface is not None
 
         @property
         def interface_nodes(self):
+            """Returns the list of interface nodes connected to this TemplateNode """
             if not self.takes_interface:
                 return []
             return [self._interface] if isinstance(
@@ -103,6 +111,7 @@ class DynamicSPNComponent:
 
         @property
         def interface_indices(self):
+            """Returns the list of interface node indices """
             if not self.takes_interface:
                 raise ValueError("This node does not take any interface nodes")
             return [interface_node.root_index for interface_node in self.interface_nodes]
@@ -115,79 +124,104 @@ class DynamicSPNComponent:
 
     def add_node(self, type, name, is_root=None, inputs=None, weights=None, interface=None,
                  **kwargs):
+        """Adds a TemplateNode to the TemplateNetwork. The methods below provide a more convenient
+        interface for adding specific nodes. """
         if name in self._nodes:
+            # Each template node must have a unique name
             raise StructureError("There already is a node with this name in the template network.")
 
         if inputs:
+            # Wrap the inputs in a list
             inputs = [inputs] if isinstance(inputs, TemplateNetwork.TemplateNode) else inputs
             for inp in inputs:
+                # Take out the actual TemplateNode if it resides in a (node, indices) tuple
                 inp_node = inp[0] if isinstance(inp, tuple) else inp
                 if not isinstance(inp_node, TemplateNetwork.TemplateNode):
                     raise TypeError("Input should also be a TemplateNode")
 
+                # Validate that the input node is already part of the TemplateNetwork
                 if inp_node.name not in self._nodes:
-                    raise StructureError("Input should already be added to the Template Network")
+                    raise StructureError("Input should already be added to the TemplateNetwork")
 
+        # Create a new TemplateNode
         node = self._nodes[name] = TemplateNetwork.TemplateNode(
             type, name, inputs=inputs, weights=weights, interface=interface, **kwargs)
+        # If this is a VarNode, we have to register it to the list of nodes to feed
         if issubclass(type, VarNode):
             self._feed_order.append(node)
+        # If the given node is a root node (or interface) it should be registered as such
         if is_root:
             self._root.append(node)
+        # Enrich the child nodes dict with the given node and its inputs
         self._child_nodes[node] = inputs
         return node
 
     def add_sum(self, name, inputs=None, weights=None, is_root=None, interface=None, **kwargs):
+        """Adds a Sum TemplateNode """
         return self.add_node(Sum, name, is_root=is_root, inputs=inputs, weights=weights,
                              interface=interface, **kwargs)
 
     def add_product(self, name, inputs=None, is_root=None, interface=None, **kwargs):
+        """Adds a Product TemplateNode """
         return self.add_node(Product, name, is_root=is_root, inputs=inputs, interface=interface,
                              weights=None, **kwargs)
 
     def add_ivs(self, name, is_root=None, **kwargs):
+        """Adds an IVs TemplateNode """
         return self.add_node(IVs, name, inputs=None, is_root=is_root, weights=None, **kwargs)
 
     def add_cont_vars(self, name, is_root=None, **kwargs):
+        """Adds a ContVars node """
         return self.add_node(ContVars, name, inputs=None, is_root=is_root, weights=None, **kwargs)
 
 
 class TopNetwork(DynamicSPNComponent):
 
     def build(self, template_steps):
-
+        """Builds the top network on top of the template steps. """
         if not self._root:
+            # TODO this is pretty intuitive, but maybe not strictly necessary
             raise StructureError("TopNetwork must have a root before step construction can be "
                                  "performed.")
         steps = []
         for step in template_steps:
             root_instances = step.root_nodes
             t = step.time
-            node_instances = {}
+            template_instance_map = {}
 
-            def get_node_instance(node):
+            def get_node_instance(template_node):
                 input_instances = []
-                if node.has_inputs:
-                    for inp in node.inputs:
+                if template_node.has_inputs:
+                    # If this node has inputs, get their instances
+                    for inp in template_node.inputs:
                         inp_node = inp[0] if isinstance(inp, tuple) else inp
                         input_instances.append(get_node_instance(inp_node))
-                if node not in node_instances:
-                    interface_instances = [root_instances[ind] for ind in
-                                           node.interface_indices] \
-                        if node.takes_interface else None
-                    instance = node_instances[node] = node.build(
+
+                # If this template node has not be instantiated before, we do it now
+                if template_node not in template_instance_map:
+                    # First we need to collect the interface instances if there are any
+                    if template_node.takes_interface:
+                        interface_instances = [
+                            root_instances[ind] for ind in template_node.interface_indices]
+                    else:
+                        interface_instances = None
+                    # Now we do the actual node instantiation
+                    instance = template_instance_map[template_node] = template_node.build(
                         time=t, input_instances=input_instances,
                         interface_instances=interface_instances)
-                else:
-                    instance = node_instances[node]
+                else:  # i.e. node was already instantiated
+                    instance = template_instance_map[template_node]
                 return instance
 
-            root_instance = [get_node_instance(r) for r in self._root]
-            steps.append(DynamicSPNComponent.Step(root_instance, step.var_nodes, t))
+            # Get the root instances
+            root_instances = [get_node_instance(r) for r in self._root]
+
+            # Append a Step to the list
+            steps.append(DynamicSPNComponent.Step(root_instances, step.var_nodes, t))
+        return steps
 
 
 class TemplateNetwork(DynamicSPNComponent):
-
 
     def __init__(self):
         super(TemplateNetwork, self).__init__()
@@ -206,6 +240,7 @@ class TemplateNetwork(DynamicSPNComponent):
     def build_step(self, prev_root_instance, t=None, is_first=False):
         """Returns root node after constructing a single step """
         if not t:
+            # TODO the current step logic is not very useful...
             t = self._current_step
             self._current_step += 1
         else:
@@ -214,31 +249,38 @@ class TemplateNetwork(DynamicSPNComponent):
         if not self._root:
             raise StructureError("TemplateNetwork must have a root before step construction can be "
                                  "performed.")
-        node_instances = {}
+
+        template_instance_map = {}
 
         def get_node_instance(node):
             input_instances = []
             if node.has_inputs:
                 for inp in node.inputs:
-                    # print(type(inp))
                     inp_node = inp[0] if isinstance(inp, tuple) else inp
+                    # If this is our first step and the current node is an interface ancestor, we
+                    # cannot instantiate it, so we skip it
                     if is_first and inp_node.interface_ancestor:
                         continue
                     input_instances.append(get_node_instance(inp_node))
-            if node not in node_instances:
-                interface_instances = [prev_root_instance[ind] for ind in node.interface_indices] \
-                    if node.takes_interface else None
-                instance = node_instances[node] = node.build(
+            if node not in template_instance_map:
+                # Otherwise, we take the interface node (if any) and instantiate a node for this
+                # time step
+                if node.takes_interface:
+                        interface_instances = [
+                            prev_root_instance[ind] for ind in node.interface_indices]
+                    else:
+                        interface_instances = None
+                instance = template_instance_map[node] = node.build(
                     time=t, input_instances=input_instances,
-                    interface_instances=interface_instances, is_first=is_first
-                )
+                    interface_instances=interface_instances, is_first=is_first)
             else:
-                instance = node_instances[node]
+                instance = template_instance_map[node]
             return instance
 
-        root_instance = [get_node_instance(r) for r in self._root]
-        var_nodes = [node_instances[n] for n in self._feed_order]
-        step = self._steps[t] = TemplateNetwork.Step(root_instance, var_nodes, t)
+        # Get Node instance of the roots
+        root_instances = [get_node_instance(r) for r in self._root]
+        var_nodes = [template_instance_map[n] for n in self._feed_order]
+        step = self._steps[t] = TemplateNetwork.Step(root_instances, var_nodes, t)
         return step
 
     def set_feed_order(self, order):
