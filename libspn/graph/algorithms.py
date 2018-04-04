@@ -15,39 +15,61 @@ import libspn.conf as conf
 def compute_graph_up_dynamic(root, interface_nodes, template_val_fun, top_val_fun, max_len,
                              interface_heads, const_fun=None, all_values=None):
 
-    # TODO set shape of element
+    # TODO interface arrays are currently not used
     interface_arrays = [
         tf.TensorArray(dtype=conf.dtype, size=max_len, name=r.name + "InterfaceArray")
         for r in interface_nodes]
+
+    # The top array
     top_array = tf.TensorArray(dtype=conf.dtype, size=max_len, name="TopArray")
 
     def compute_single_step(t, interface_values, interface_arrays, top_val, top_array):
         all_values_step = {}
+
+        # Wrapper for the value function that takes in the time step and the interface values
         val_fun = template_val_fun(t, interface_values)
+
+        # First we construct the interface node tensors
         interface_values = [compute_graph_up(
             interface_node, val_fun=val_fun, const_fun=const_fun, all_values=all_values_step)
             for interface_node in interface_nodes]
+
+        # If we call compute_graph_up on the head, it will take the values that are already
+        # determined in the compute_graph_up call on the interface node (they should be in the
+        # all_values_step dict
         heads = [compute_graph_up(head, val_fun=val_fun, const_fun=const_fun,
                                   all_values=all_values_step) for head in interface_heads]
+
+        # Function wrapper for top value
         val_fun = top_val_fun(interface_values)
+
+        # Then, we call compute_graph_up on the actual root of the SPN
         top_val = compute_graph_up(root, val_fun, const_fun=const_fun, all_values=all_values_step)
+
+        # Write the value to the top array
         top_array = top_array.write(t, top_val)
+
+        # Increment and return values
         return t + 1, heads, interface_arrays, top_val, top_array
 
     # TODO try if the first step can also be done in the while loop
+    # Compute first step
     _, interface_init, interface_arrays, top_val, top_array = compute_single_step(
         0, None, interface_arrays, None, top_array)
 
     # TODO if the first step is done change start step to 0
+    # Compute remaining steps
     step = tf.constant(1)
     _, final_val, interface_arrays, top_val, top_array = tf.while_loop(
         cond=lambda i, *_: tf.less(i, max_len),
         body=compute_single_step,
         loop_vars=[step, interface_init, interface_arrays, top_val, top_array])
 
+    # Stack the interfaces
     interface_per_step = [arr.stack() for arr in interface_arrays]
-    top_per_step = top_array.stack()
 
+    # Stack the values of the top array
+    top_per_step = top_array.stack()
     return top_val, top_per_step, interface_per_step
 
 
