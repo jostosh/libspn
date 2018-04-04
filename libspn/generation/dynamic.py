@@ -266,10 +266,10 @@ class TemplateNetwork(DynamicSPNComponent):
                 # Otherwise, we take the interface node (if any) and instantiate a node for this
                 # time step
                 if node.takes_interface:
-                        interface_instances = [
-                            prev_root_instance[ind] for ind in node.interface_indices]
-                    else:
-                        interface_instances = None
+                    interface_instances = [
+                        prev_root_instance[ind] for ind in node.interface_indices]
+                else:
+                    interface_instances = None
                 instance = template_instance_map[node] = node.build(
                     time=t, input_instances=input_instances,
                     interface_instances=interface_instances, is_first=is_first)
