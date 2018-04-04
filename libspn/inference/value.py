@@ -7,7 +7,10 @@
 
 import tensorflow as tf
 from types import MappingProxyType
-from libspn.graph.algorithms import compute_graph_up
+
+from libspn import Product
+from libspn.graph.algorithms import compute_graph_up, compute_graph_up_dynamic
+from libspn.graph.node import DynamicVarNode
 from libspn.inference.type import InferenceType
 
 
@@ -53,7 +56,7 @@ class Value:
                 if (self._inference_type == InferenceType.MARGINAL
                     or (self._inference_type is None and
                         node.inference_type == InferenceType.MARGINAL)):
-                    return node._compute_value(*args)
+                    return node._compute_value()
                 else:
                     return node._compute_mpe_value(*args)
 
@@ -114,3 +117,135 @@ class LogValue:
         with tf.name_scope("LogValue"):
             return compute_graph_up(root, val_fun=fun,
                                     all_values=self._values)
+
+
+class DynamicValue:
+    """Assembles TF operations computing the values of nodes of the SPN during
+    an upwards pass. The value can be either an SPN value (marginal inference)
+    or an MPN value (MPE inference) or a mixture of both.
+
+    Args:
+        inference_type (InferenceType): Determines the type of inference that
+            should be used. If set to ``None``, the inference type is specified
+            by the ``inference_type`` flag of the node. If set to ``MARGINAL``,
+            marginal inference will be used for all nodes. If set to ``MPE``,
+            MPE inference will be used for all nodes.
+    """
+
+    def __init__(self, inference_type=None):
+        self._inference_type = inference_type
+        self._values = {}
+
+    @property
+    def values(self):
+        """dict: A dictionary of ``Tensor`` indexed by the SPN node containing
+        operations computing value for each node."""
+        return MappingProxyType(self._values)
+
+    def get_value(self, root, interface_nodes, interface_heads, max_len):
+        """Assemble a TF operation computing the values of nodes of the SPN
+        rooted in ``root``.
+
+        Returns the operation computing the value for the ``root``. Operations
+        computing values for other nodes can be obtained using :obj:`values`.
+
+        Args:
+            root (Node): The root node of the SPN graph.
+
+        Returns:
+            Tensor: A tensor of shape ``[None, num_outputs]``, where the first
+            dimension corresponds to the batch size.
+        """
+        def template_val_fun(step, interface_tensors):
+            def fun(node, *args):
+                with tf.name_scope(node.name):
+                    kwargs = {}
+                    if isinstance(node, DynamicVarNode):
+                        kwargs['step'] = step
+                    if isinstance(node, Product) and node.takes_interface:
+                        kwargs['interface_tensors'] = interface_tensors
+                    if (self._inference_type == InferenceType.MARGINAL
+                        or (self._inference_type is None and
+                            node.inference_type == InferenceType.MARGINAL)):
+                        fn = node._compute_value
+                    else:
+                        fn = node._compute_mpe_value
+                    return fn(*args, **kwargs)
+            return fun
+
+        def top_val_fun(interface_tensors):
+            def fun(node, *args):
+                with tf.name_scope(node.name):
+                    kwargs = {}
+                    if isinstance(node, Product) and node.takes_interface:
+                        kwargs['interface_tensors'] = interface_tensors
+                    if (self._inference_type == InferenceType.MARGINAL
+                        or (self._inference_type is None and
+                            node.inference_type == InferenceType.MARGINAL)):
+                        fn = node._compute_value
+                    else:
+                        fn = node._compute_mpe_value
+                    return fn(*args, **kwargs)
+            return fun
+
+        self._values = {}
+        with tf.name_scope("Value"):
+            # return compute_graph_up(root, val_fun=fun, all_values=self._values)
+            top_val, top_per_step, interface_per_step = compute_graph_up_dynamic(
+                root=root, interface_nodes=interface_nodes, interface_heads=interface_heads,
+                template_val_fun=template_val_fun, top_val_fun=top_val_fun, max_len=max_len,
+                all_values=self._values)
+
+        return top_val, top_per_step, interface_per_step
+
+
+class DynamicLogValue:
+    """Assembles a TF operation computing the log values of nodes of the SPN
+    during an upwards pass. The value can be either an SPN value (marginal
+    inference) or an MPN value (MPE inference) or a mixture of both.
+
+    Args:
+        inference_type (InferenceType): Determines the type of inference that
+            should be used. If set to ``None``, the inference type is specified
+            by the ``inference_type`` flag of the node. If set to ``MARGINAL``,
+            marginal inference will be used for all nodes. If set to ``MPE``,
+            MPE inference will be used for all nodes.
+    """
+
+    def __init__(self, inference_type=None):
+        self._inference_type = inference_type
+        self._values = {}
+
+    @property
+    def values(self):
+        """dict: A dictionary of ``Tensor`` indexed by the SPN node containing
+        operations computing log value for each node."""
+        return MappingProxyType(self._values)
+
+    def get_value(self, root, step, return_all_steps):
+        """Assemble TF operations computing the log values of nodes of the SPN
+        rooted in ``root``.
+
+        Returns the operation computing the log value for the ``root``.
+        Operations computing log values for other nodes can be obtained using
+        :obj:`values`.
+
+        Args:
+            root: Root node of the SPN.
+
+        Returns:
+            Tensor: A tensor of shape ``[None, num_outputs]``, where the first
+            dimension corresponds to the batch size.
+        """
+        def fun(node, *args):
+            with tf.name_scope(node.name):
+                if (self._inference_type == InferenceType.MARGINAL
+                    or (self._inference_type is None and
+                        node.inference_type == InferenceType.MARGINAL)):
+                    return node._compute_log_value(*args)
+                else:
+                    return node._compute_log_mpe_value(*args)
+
+        self._values = {}
+        with tf.name_scope("LogValue"):
+            log_value = compute_graph_up(root, val_fun=fun, all_values=self._values)

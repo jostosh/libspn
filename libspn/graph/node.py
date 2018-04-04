@@ -522,6 +522,201 @@ class Node(ABC):
         return id(self) < id(other)
 
 
+class DynamicNode(Node, ABC):
+
+    def get_value(self, inference_type=None, step=None):
+        """Assemble TF operations computing the value of the SPN rooted in
+        this node.
+
+        Args:
+            inference_type (InferenceType): Determines the type of inference
+                that should be used. If set to ``None``, the inference type is
+                specified by the ``inference_type`` flag of the node. If set to
+                ``MARGINAL``, marginal inference will be used for all nodes. If
+                set to ``MPE``, MPE inference will be used for all nodes.
+
+        Returns:
+            Tensor: A tensor of shape ``[None, out_size]``, where the first
+            dimension corresponds to the batch size.
+        """
+        from libspn.inference.value import DynamicValue
+        return DynamicValue(inference_type).get_value(self, step=step)
+
+    def get_log_value(self, inference_type=None):
+        """Assemble TF operations computing the log value of the SPN rooted in
+        this node.
+
+        Args:
+            inference_type (InferenceType): Determines the type of inference
+                that should be used. If set to ``None``, the inference type is
+                specified by the ``inference_type`` flag of the node. If set to
+                ``MARGINAL``, marginal inference will be used for all nodes. If
+                set to ``MPE``, MPE inference will be used for all nodes.
+
+        Returns:
+            Tensor: A tensor of shape ``[None, out_size]``, where the first
+            dimension corresponds to the batch size.
+        """
+        from libspn.inference.value import DynamicLogValue
+        return DynamicLogValue(inference_type).get_value(self)
+
+    def set_inference_types(self, inference_type):
+        """Set inference type for each node in the SPN rooted in this node.
+
+        Args:
+           inference_type (InferenceType): Inference type to set for the nodes.
+        """
+        def fun(node):
+            node.inference_type = inference_type
+
+        traverse_graph(self, fun=fun, skip_params=False)
+
+    def _create(self):
+        """Create any TF placeholder or variable that need to be instantiated
+        during the creation of the node and shared between all operations.
+
+        To be re-implemented in a subclass.
+        """
+
+    @abstractproperty
+    def _const_out_size(self):
+        """bool: If True, the number of outputs of this node does not depend
+        on the inputs of the node and is fixed.
+
+        To be re-implemented in sub-classes.
+        """
+
+    @abstractmethod
+    def _compute_out_size(self, *input_out_sizes):
+        """Compute the size of the output of this node.
+
+        To be re-implemented in sub-classes.
+
+        Args:
+            *input_out_sizes (int): For each input, the size of the output of
+                                    the input node.
+
+        Returns:
+            int: Size of the output of this node.
+        """
+
+    @abstractmethod
+    def _compute_scope(self, *input_scopes):
+        """Compute the scope of each output value of this node.
+
+        To be re-implemented in sub-classes.
+
+        Args:
+            *input_scopes (list of Scope): For each input, scopes of all output
+                                           values of the input node.
+
+        Returns:
+            list of Scope: A list of length ``out_size`` containing scopes of
+            all output values of this node.
+        """
+
+    @abstractmethod
+    def _compute_valid(self, *input_scopes):
+        """Check for validity of the SPN rooted in this node. If the node has
+        multiple outputs, it is considered valid if all outputs of that node
+        come from a valid SPN.
+
+        If valid, return the scope of each output value of this node, otherwise,
+        return ``None`` to indicate that the node/SPN is not valid.
+
+        To be re-implemented in sub-classes.
+
+        Args:
+            *input_scopes (list of Scope): For each input, scopes of all output
+                 values of the input node or ``None`` if the SPN was found to be
+                 invalid already.
+
+        Returns:
+            list of Scope: A list of length ``out_size`` containing scopes of
+            all output of this node if the SPN rooted in this node is valid,
+            otherwise ``None``.
+        """
+
+    @abstractmethod
+    def _compute_value(self, *input_tensors):
+        """Assemble TF operations computing the marginal value of this node.
+
+        To be re-implemented in sub-classes.
+
+        Args:
+            *input_tensors (Tensor): For each input, a tensor produced by
+                                     the input node.
+
+        Returns:
+            Tensor: A tensor of shape ``[None, out_size]``, where the first
+            dimension corresponds to the batch size.
+        """
+
+    @abstractmethod
+    def _compute_log_value(self, *input_tensors):
+        """Assemble TF operations computing the marginal log value of this node.
+
+        To be re-implemented in sub-classes.
+
+        Args:
+            *input_tensors (Tensor): For each input, a tensor produced by
+                                     the input node.
+
+        Returns:
+            Tensor: A tensor of shape ``[None, out_size]``, where the first
+            dimension corresponds to the batch size.
+        """
+
+    @abstractmethod
+    def _compute_mpe_value(self, *input_tensors):
+        """Assemble TF operations computing the MPE value of this node.
+
+        To be re-implemented in sub-classes.
+
+        Args:
+            *input_tensors (Tensor): For each input, a tensor produced by
+                                     the input node.
+
+        Returns:
+            Tensor: A tensor of shape ``[None, out_size]``, where the first
+            dimension corresponds to the batch size.
+        """
+
+    @abstractmethod
+    def _compute_log_mpe_value(self, *input_tensors):
+        """Assemble TF operations computing the log MPE value of this node.
+
+        To be re-implemented in sub-classes.
+
+        Args:
+            *input_tensors (Tensor): For each input, a tensor produced by
+                                     the input node.
+
+        Returns:
+            Tensor: A tensor of shape ``[None, out_size]``, where the first
+            dimension corresponds to the batch size.
+        """
+
+    def __repr__(self):
+        return self._name
+
+    def __ge__(self, other):
+        """Enables sorting nodes."""
+        return id(self) >= id(other)
+
+    def __gt__(self, other):
+        """Enables sorting nodes."""
+        return id(self) > id(other)
+
+    def __le__(self, other):
+        """Enables sorting nodes."""
+        return id(self) <= id(other)
+
+    def __lt__(self, other):
+        """Enables sorting nodes."""
+        return id(self) < id(other)
+
+
 class OpNode(Node):
     """An abstract class defining an operation node of the SPN graph.
 
@@ -742,6 +937,173 @@ class OpNode(Node):
             where the first dimension corresponds to the batch size and the
             second dimension is the size of the output of the input node.
         """
+
+
+class DynamicVarNode(Node):
+    """An abstract class defining a variable node of the SPN graph.
+
+        Args:
+            feed (Tensor): Tensor feeding this node or ``None``. If ``None``,
+                           an internal placeholder will be used to feed this node.
+            name (str): Name of the node.
+        """
+
+    def __init__(self, feed=None, name=None):
+        super().__init__(InferenceType.MARGINAL, name)
+        self.attach_feed(feed)
+
+    @utils.docinherit(Node)
+    @abstractmethod
+    def deserialize(self, data):
+        super().deserialize(data)
+        self.attach_feed(None)
+
+    def attach_feed(self, feed):
+        """Set a tensor that feeds this node.
+
+        Args:
+           feed (Tensor): Tensor feeding this node or ``None``. If ``None``,
+                          an internal placeholder will be used to feed this
+                          node.
+        """
+        if feed is None:
+            self._feed = self._placeholder
+        else:
+            self._feed = feed
+
+    @property
+    def feed(self):
+        """Tensor: Tensor feeding this node."""
+        return self._feed
+
+    @utils.docinherit(Node)
+    def _create(self):
+        self._placeholder = self._create_placeholder()
+
+    @abstractmethod
+    def _create_placeholder(self):
+        """Create a placeholder that will be used to feed this variable node
+        when no other feed is available.
+
+        To be re-implemented in a sub-class.
+
+        Returns:
+            Tensor: A TF placeholder.
+        """
+
+    def _const_out_size(self):
+        """bool: If True, the number of outputs of this node does not depend
+        on the inputs of the node and is fixed.
+
+        Variable nodes always have a fixed number of outputs.
+        """
+        return True
+
+    @abstractmethod
+    def _compute_out_size(self):
+        """Compute the size of the output of this node.
+
+        To be re-implemented in sub-classes.
+
+        Returns:
+            int: Size of the output of this node.
+        """
+
+    @abstractmethod
+    def _compute_scope(self):
+        """Compute the scope of each output value of this node.
+
+        To be re-implemented in sub-classes.
+
+        Returns:
+            list of Scope: A list of length ``out_size`` containing scopes of
+            all output values of this node.
+        """
+
+    def _compute_valid(self):
+        """Check for validity of the SPN rooted in this node. If the node has
+        multiple outputs, it is considered valid if all outputs of that node
+        come from a valid SPN.
+
+        If valid, return the scope of each output value of this node, otherwise,
+        return ``None`` to indicate that the node/SPN is not valid.
+
+        Since a variable node is assumed to always be valid, this just returns
+        the scope of the outputs of this node.
+
+        Returns:
+            list of Scope: A list of length ``out_size`` containing scopes of
+            all output of this node.
+        """
+        return self._compute_scope()
+
+    @abstractmethod
+    def _compute_value(self, step):
+        """Assemble TF operations computing the marginal value of this node.
+
+        To be re-implemented in sub-classes.
+
+        Returns:
+            Tensor: A tensor of shape ``[None, out_size]``, where the first
+            dimension corresponds to the batch size.
+        """
+
+    def _compute_log_value(self, step):
+        """Assemble TF operations computing the marginal log value of this node.
+
+        Returns:
+            Tensor: A tensor of shape ``[None, out_size]``, where the first
+            dimension corresponds to the batch size.
+        """
+        return tf.log(self._compute_value())
+
+    def _compute_mpe_value(self, step):
+        """Assemble TF operations computing the MPE value of this node.
+
+        The MPE value is equal to marginal value for VarNodes.
+
+        Returns:
+            Tensor: A tensor of shape ``[None, out_size]``, where the first
+            dimension corresponds to the batch size.
+        """
+        return self._compute_value(step)
+
+    def _compute_log_mpe_value(self, step):
+        """Assemble TF operations computing the log MPE value of this node.
+
+        The MPE log value is equal to marginal log value for VarNodes.
+
+        Returns:
+            Tensor: A tensor of shape ``[None, out_size]``, where the first
+            dimension corresponds to the batch size.
+        """
+        return self._compute_log_value(step)
+
+    @abstractmethod
+    def _compute_mpe_state(self, counts):
+        """Assemble TF operations computing the MPE state of the variables
+        represented by the node.
+
+        To be re-implemented in sub-classes.
+
+        Args:
+            counts (Tensor): Branch counts for each output value of this node.
+
+        Returns:
+            Tensor: MPE state of every variable in the node.
+        """
+
+    def _as_graph_element(self):
+        """Used by TF to convert this class to a tensor.
+
+        A class implementing this method can be used as a key in TF feeds
+        (feed_dict) when running the graph.
+
+        Returns:
+            Variable or Tensor: A TF placeholder or variable representing
+            this node.
+        """
+        return self._feed
 
 
 class VarNode(Node):

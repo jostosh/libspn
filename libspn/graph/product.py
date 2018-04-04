@@ -29,8 +29,9 @@ class Product(OpNode):
     __logger = get_logger()
     __info = __logger.info
 
-    def __init__(self, *values, name="Product"):
+    def __init__(self, *values, interface_indices=None, name="Product"):
         self._values = []
+        self._interface_indices = interface_indices
         super().__init__(InferenceType.MARGINAL, name)
         self.set_values(*values)
 
@@ -47,6 +48,10 @@ class Product(OpNode):
         super().deserialize_inputs(data, nodes_by_name)
         self._values = tuple(Input(nodes_by_name[nn], i)
                              for nn, i in data['values'])
+
+    @property
+    def takes_interface(self):
+        return self._interface_indices is not None
 
     @property
     @utils.docinherit(OpNode)
@@ -106,21 +111,23 @@ class Product(OpNode):
                 return None
         return self._compute_scope(*value_scopes)
 
-    def _compute_value_common(self, *value_tensors):
+    def _compute_value_common(self, *value_tensors, interface_tensors=None):
         """Common actions when computing value."""
         # Check inputs
         if not self._values:
             raise StructureError("%s is missing input values." % self)
         # Prepare values
         value_tensors = self._gather_input_tensors(*value_tensors)
+        if interface_tensors is not None:
+            value_tensors += tuple(interface_tensors[i] for i in self._interface_indices)
         if len(value_tensors) > 1:
             values = tf.concat(values=value_tensors, axis=1)
         else:
             values = value_tensors[0]
         return values
 
-    def _compute_value(self, *value_tensors):
-        values = self._compute_value_common(*value_tensors)
+    def _compute_value(self, *value_tensors, interface_tensors=None):
+        values = self._compute_value_common(*value_tensors, interface_tensors=interface_tensors)
         return tf.reduce_prod(values, 1, keep_dims=True)
 
     def _compute_log_value(self, *value_tensors):

@@ -8,6 +8,47 @@
 """LibSPN graph algorithms."""
 
 from collections import deque, defaultdict
+import tensorflow as tf
+import libspn.conf as conf
+
+
+def compute_graph_up_dynamic(root, interface_nodes, template_val_fun, top_val_fun, max_len,
+                             interface_heads, const_fun=None, all_values=None):
+
+    # TODO set shape of element
+    interface_arrays = [
+        tf.TensorArray(dtype=conf.dtype, size=max_len, name=r.name + "InterfaceArray")
+        for r in interface_nodes]
+    top_array = tf.TensorArray(dtype=conf.dtype, size=max_len, name="TopArray")
+
+    def compute_single_step(t, interface_values, interface_arrays, top_val, top_array):
+        all_values_step = {}
+        val_fun = template_val_fun(t, interface_values)
+        interface_values = [compute_graph_up(
+            interface_node, val_fun=val_fun, const_fun=const_fun, all_values=all_values_step)
+            for interface_node in interface_nodes]
+        heads = [compute_graph_up(head, val_fun=val_fun, const_fun=const_fun,
+                                  all_values=all_values_step) for head in interface_heads]
+        val_fun = top_val_fun(interface_values)
+        top_val = compute_graph_up(root, val_fun, const_fun=const_fun, all_values=all_values_step)
+        top_array = top_array.write(t, top_val)
+        return t + 1, heads, interface_arrays, top_val, top_array
+
+    # TODO try if the first step can also be done in the while loop
+    _, interface_init, interface_arrays, top_val, top_array = compute_single_step(
+        0, None, interface_arrays, None, top_array)
+
+    # TODO if the first step is done change start step to 0
+    step = tf.constant(1)
+    _, final_val, interface_arrays, top_val, top_array = tf.while_loop(
+        cond=lambda i, *_: tf.less(i, max_len),
+        body=compute_single_step,
+        loop_vars=[step, interface_init, interface_arrays, top_val, top_array])
+
+    interface_per_step = [arr.stack() for arr in interface_arrays]
+    top_per_step = top_array.stack()
+
+    return top_val, top_per_step, interface_per_step
 
 
 def compute_graph_up(root, val_fun, const_fun=None, all_values=None):
