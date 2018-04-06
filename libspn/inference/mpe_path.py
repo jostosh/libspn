@@ -19,7 +19,7 @@ import libspn.conf as conf
 def tensor_array_factory(max_len):
     def factory(node):
         return tf.TensorArray(
-            size=max_len, dtype=conf.dtype, clear_after_read=True, name=node.name + "_TensorArray")
+            size=max_len, dtype=conf.dtype, clear_after_read=False, name=node.name + "_TensorArray")
     return factory
 
 
@@ -132,18 +132,34 @@ class MPEPath:
         self._counts = DefaultOrderedDict(
             default_factory=tensor_array_factory(get_max_steps(root)), pass_key=True)
 
-        def down_fun_time(t):
-            def down_fun(node, parent_vals):
+        def combine_parents_fun_time(t):
+            def combine_parents_fun(node, parent_vals):
                 # Sum up all parent vals
-                if t == 0 and node.is_op and node.interface_head:
-                    summed = tf.zeros_like(parent_vals[0])
-                else:
+                def accumulate():
                     if len(parent_vals) > 1:
-                        summed = tf.accumulate_n(parent_vals, name=node.name + "_add")
+                        summed = tf.add_n(parent_vals, name=node.name + "_add")
                     else:
                         summed = parent_vals[0]
-                with tf.name_scope("WriteCountsToArray"):
-                    self._counts[node] = self._counts[node].write(t, summed)
+                    return summed
+
+                if node.is_op and node.interface_head:
+                    return tf.cond(tf.equal(t, 0),
+                                   lambda: tf.zeros_like(parent_vals[0]), accumulate)
+                return accumulate()
+            return combine_parents_fun
+
+        def down_fun_time(t):
+            def down_fun(node, summed):
+                # # Sum up all parent vals
+                # if t == 0 and node.is_op and node.interface_head:
+                #     summed = tf.zeros_like(parent_vals[0])
+                # else:
+                #     if len(parent_vals) > 1:
+                #         summed = tf.accumulate_n(parent_vals, name=node.name + "_add")
+                #     else:
+                #         summed = parent_vals[0]
+                # with tf.name_scope("WriteCountsToArray"):
+                #     self._counts[node] = self._counts[node].write(t, summed)
                 if node.is_op:
                     # Compute for inputs
                     with tf.name_scope(node.name):
@@ -182,9 +198,10 @@ class MPEPath:
             graph_input_default = tf.zeros_like(graph_input_end)
 
             # Traverse the graph computing counts
-            compute_graph_up_down_dynamic(
+            self._counts = compute_graph_up_down_dynamic(
                 root, down_fun_time=down_fun_time, graph_input_end=graph_input_end,
-                graph_input_default=graph_input_default)
+                graph_input_default=graph_input_default,
+                combine_parents_fun_time=combine_parents_fun_time)
 
             for node in self._counts:
                 self._counts[node] = tf.reduce_sum(
