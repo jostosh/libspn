@@ -119,13 +119,9 @@ class DynamicIVs(DynamicVarNode):
             raise ValueError("num_vars must be a positive integer")
         if not isinstance(num_vals, int) or num_vals < 2:
             raise ValueError("num_vals must be >1")
-        if not time_major:
-            raise ValueError("DynamicIVs node does not yet support batch major")
         self._num_vars = num_vars
         self._num_vals = num_vals
-        self._max_steps = max_steps
-        self._time_major = time_major
-        super().__init__(feed, name)
+        super().__init__(max_steps=max_steps, time_major=time_major, feed=feed, name=name)
 
     @property
     def num_vars(self):

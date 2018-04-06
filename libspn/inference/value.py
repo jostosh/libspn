@@ -147,7 +147,7 @@ class DynamicValue:
         operations computing value for each node."""
         return MappingProxyType(self._values)
 
-    def get_value(self, root, max_len):
+    def get_value(self, root):
         """Assemble a TF operation computing the values of nodes of the SPN
         rooted in ``root``.
 
@@ -185,8 +185,7 @@ class DynamicValue:
         with tf.name_scope("Value"):
             # return compute_graph_up(root, val_fun=fun, all_values=self._values)
             top_val, top_per_step = compute_graph_up_dynamic(
-                root=root, template_val_fun=template_val_fun, max_len=max_len,
-                all_values=self._values)
+                root=root, template_val_fun=template_val_fun, all_values=self._values)
 
         return top_val, top_per_step
 

@@ -285,6 +285,11 @@ class Node(ABC):
         # Not the best oop, but avoids the need for importing .node to check
         return isinstance(self, InterfaceNode)
 
+    @property
+    def is_dynamic(self):
+        """ """
+        return isinstance(self, DynamicVarNode)
+
     def get_tf_graph_size(self):
         """Get the size of the TensorFlow graph with which this SPN graph node is associated."""
         return len(self.tf_graph.get_operations())
@@ -669,7 +674,7 @@ class DynamicNode(Node, ABC):
             dimension corresponds to the batch size.
         """
         from libspn.inference.value import DynamicValue
-        return DynamicValue(inference_type).get_value(self, step=step)
+        return DynamicValue(inference_type).get_value(self)
 
     def get_log_value(self, inference_type=None):
         """Assemble TF operations computing the log value of the SPN rooted in
@@ -1078,7 +1083,7 @@ class OpNode(Node):
         """
 
 
-class DynamicVarNode(Node):
+class DynamicVarNode(Node, ABC):
     """An abstract class defining a variable node of the SPN graph.
 
         Args:
@@ -1087,7 +1092,11 @@ class DynamicVarNode(Node):
             name (str): Name of the node.
         """
 
-    def __init__(self, feed=None, name=None):
+    def __init__(self, max_steps, time_major=False, feed=None, name=None):
+        if not time_major:
+            raise ValueError("DynamicIVs node does not yet support batch major")
+        self._max_steps = max_steps
+        self._time_major = time_major
         super().__init__(InferenceType.MARGINAL, name)
         self.attach_feed(feed)
 
@@ -1104,6 +1113,10 @@ class DynamicVarNode(Node):
     @property
     def batch_size(self):
         return tf.shape(self._feed)[1]
+
+    @property
+    def max_steps(self):
+        return self._max_steps
 
     def attach_feed(self, feed):
         """Set a tensor that feeds this node.

@@ -11,22 +11,13 @@ from collections import deque, defaultdict
 import tensorflow as tf
 import libspn.conf as conf
 from collections import OrderedDict
-from libspn.utils.defaultordereddict import DefaultOrderedDict
+
+from libspn.exceptions import StructureError
 
 
-def tensor_array_factory(max_len):
-    def factory(node):
-        return tf.TensorArray(
-            size=max_len, dtype=conf.dtype, clear_after_read=True,
-            name=node.name + "_TensorArray")
-
-    return factory
-
-
-def compute_graph_up_dynamic(root, template_val_fun, max_len, const_fun=None, all_values=None):
+def compute_graph_up_dynamic(root, template_val_fun, const_fun=None, all_values=None):
 
     all_values_step = OrderedDict()
-    ta_factory = tensor_array_factory(max_len)
 
     # Get the template head nodes
     # TODO assumes that template heads are also sourcing other nodes (must be right?)
@@ -35,7 +26,13 @@ def compute_graph_up_dynamic(root, template_val_fun, max_len, const_fun=None, al
     template_heads = [node for node, is_head in is_template_head.items() if is_head]
 
     # Batch size is needed to generate the 'no evidence' values for interface nodes
-    batch_size = traverse_graph(root, lambda node: node.is_var).batch_size
+    batch_size = get_batch_size(root)
+    max_len = get_max_steps(root)
+
+    # Make a tensor array factory
+    def ta_factory(node):
+        return tf.TensorArray(
+            size=max_len, dtype=conf.dtype, clear_after_read=False, name=node.name + "_TensorArray")
 
     def compute_single_step(t, template_head_values, value_arrays, top_val):
 
@@ -238,7 +235,8 @@ def compute_graph_up_down(root, down_fun, graph_input, up_fun=None,
                     pass
 
 
-def compute_graph_up_down_dynamic(root, max_len, down_fun_time, graph_input, down_values=None):
+def compute_graph_up_down_dynamic(root, down_fun_time, graph_input_end, graph_input_default,
+                                  down_values=None):
     """Computes a values for every node in the graph moving first up and then down
     the graph. When moving up, it behaves exactly as :meth:`compute_graph_up`.
     When moving down it computes values for each input of a node based on
@@ -251,7 +249,7 @@ def compute_graph_up_down_dynamic(root, max_len, down_fun_time, graph_input, dow
             producing values for each input of the ``node``. The argument
             ``parent_vals`` is a list containing the values obtained for each
             parent node input connected to this node.
-        graph_input: The value passed as a single parent value to the function
+        graph_input_end: The value passed as a single parent value to the function
             computing the values for the root node or a function which computes
             that value.
         up_fun (function): A function ``up_fun(node, *args)`` producing a
@@ -280,9 +278,12 @@ def compute_graph_up_down_dynamic(root, max_len, down_fun_time, graph_input, dow
     # Traverse up for parents
     compute_graph_up(root, val_fun=up_fun_parents)
 
+    node_order = []
+    traverse_graph(root, fun=lambda node: node_order.append(node))
+
     # Add root node
-    if callable(graph_input):
-        graph_input = graph_input()
+    if callable(graph_input_end):
+        graph_input_end = graph_input_end()
 
     # interface nodes
     # is_interface_node = {}
@@ -290,10 +291,13 @@ def compute_graph_up_down_dynamic(root, max_len, down_fun_time, graph_input, dow
     # interface_node = [node for node, is_head in is_interface_node.items() if is_head]
 
     down_values, prev_down_values = dict(), dict()
-    for t in reversed(range(max_len)):
+    max_steps = get_max_steps(root)
+
+    for t in reversed(range(max_steps)):
         down_fun = down_fun_time(t)
         queue = deque()  # Queue of nodes with computed values, but unprocessed inputs
-        down_values[root] = down_fun(root, [graph_input])
+        down_values[root] = down_fun(
+            root, [graph_input_end if t == max_steps - 1 else graph_input_default])
         if root.is_op:
             queue.append(root)
 
@@ -309,18 +313,19 @@ def compute_graph_up_down_dynamic(root, max_len, down_fun_time, graph_input, dow
 
                 # If we have not yet evaluated this child...
                 if child not in down_values:  # Not computed yet
-
                     # Collect the parent values
                     parent_vals = []
                     try:
-                        if child.has_receiver and t > 0:
-                            parent_nodes = prev_down_values[child.receiver]
+                        if child.has_receiver and t < max_steps - 1:
+                            parent_nodes = parents[child.receiver]
+                            values = prev_down_values
                         else:
                             parent_nodes = parents[child]
+                            values = down_values
 
                         # Go through list of parents of this child
                         for parent_node, parent_input_nr in parent_nodes:
-                            parent_vals.append(down_values[parent_node][parent_input_nr])
+                            parent_vals.append(values[parent_node][parent_input_nr])
                         # All parent values are available, compute value
                         down_values[child] = down_fun(child, parent_vals)
 
@@ -439,3 +444,38 @@ def traverse_graph(root, fun, skip_params=False):
 #                           up_fun=up_fun, up_values=up_values,
 #                           down_values=down_values, up_skip_params=up_skip_params,
 #                           down_skip_params=down_skip_params)
+def get_max_steps(root):
+    """Traverses the graph and returns the maximum number of steps if any DynamicVarNodes are in
+     it."""
+
+    max_steps = []
+
+    def _node_max_steps(node):
+        if node.is_dynamic:
+            max_steps.append(node.max_steps)
+    # Obtain the max steps
+    traverse_graph(root, _node_max_steps, skip_params=True)
+
+    # If there are no DynamicVarNodes, the length will be zero and the function is undefined
+    if len(max_steps) == 0:
+        raise ValueError("Graph rooted at {} does not contain any dynamic nodes.".format(
+            root.name))
+
+    # Otherwise we make sure that all max_steps are equal
+    if any(max_steps[i] != max_steps[0] for i in range(1, len(max_steps))):
+        raise StructureError("All dynamic nodes should have the same max steps, found {}.".format(
+            set(max_steps)))
+
+    return max_steps[0]
+
+
+def get_batch_size(root):
+    """Traverses the graph and returns the maximum number of steps if any DynamicVarNodes are in
+     it."""
+
+    def _batch_size(node):
+        if node.is_dynamic or node.is_var:
+            return True
+
+    # Obtain the max steps
+    return traverse_graph(root, _batch_size, skip_params=True).batch_size
