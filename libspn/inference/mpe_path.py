@@ -7,8 +7,19 @@
 
 from types import MappingProxyType
 import tensorflow as tf
-from libspn.inference.value import Value, LogValue
-from libspn.graph.algorithms import compute_graph_up_down
+
+from libspn import Product
+from libspn.inference.value import Value, LogValue, DynamicValue, DynamicLogValue
+from libspn.graph.algorithms import compute_graph_up_down, compute_graph_up_down_dynamic
+from libspn.utils.defaultordereddict import DefaultOrderedDict
+import libspn.conf as conf
+
+
+def tensor_array_factory(max_len):
+    def factory(node):
+        return tf.TensorArray(
+            size=max_len, dtype=conf.dtype, clear_after_read=True, name=node.name + "_TensorArray")
+    return factory
 
 
 class MPEPath:
@@ -26,17 +37,26 @@ class MPEPath:
     """
 
     def __init__(self, value=None, value_inference_type=None, log=True, add_random=None,
-                 use_unweighted=False):
-        self._counts = {}
+                 use_unweighted=False, dynamic=False, maxlen=None):
+        self._counts = {} if not dynamic else DefaultOrderedDict(
+            default_factory=tensor_array_factory(maxlen), pass_key=True)
         self._log = log
         self._add_random = add_random
         self._use_unweighted = use_unweighted
+        self._dynamic = dynamic
+        self._maxlen = maxlen
         # Create internal value generator
         if value is None:
-            if log:
-                self._value = LogValue(value_inference_type)
+            if dynamic:
+                if log:
+                    self._value = DynamicLogValue(value_inference_type)
+                else:
+                    self._value = DynamicValue(value_inference_type)
             else:
-                self._value = Value(value_inference_type)
+                if log:
+                    self._value = LogValue(value_inference_type)
+                else:
+                    self._value = Value(value_inference_type)
         else:
             self._value = value
 
@@ -94,3 +114,57 @@ class MPEPath:
             # Traverse the graph computing counts
             self._counts = {}
             compute_graph_up_down(root, down_fun=down_fun, graph_input=graph_input)
+
+    def get_mpe_path_dynamic(self, root):
+        """Assemble TF operations computing the branch counts for the MPE
+        downward path through the SPN rooted in ``root``.
+
+        Args:
+            root (Node): The root node of the SPN graph.
+        """
+        def down_fun_time(t):
+            def down_fun(node, parent_vals):
+                # Sum up all parent vals
+                if len(parent_vals) > 1:
+                    summed = tf.accumulate_n(parent_vals, name=node.name + "_add")
+                else:
+                    summed = parent_vals[0]
+                self._counts[node] = self._counts[node].write(t, summed)
+                if node.is_op:
+                    # Compute for inputs
+                    with tf.name_scope(node.name):
+                        kwargs = {}
+                        if node.is_interface:
+                            inputs = node.source.inputs
+                            time = t - 1
+                        else:
+                            inputs = node.inputs
+                            time = t
+
+                        if self._log:
+                            return node._compute_log_mpe_path(
+                                summed, *[self._value.values[i.node].read(time)
+                                          if i else None
+                                          for i in inputs],
+                                add_random=self._add_random,
+                                use_unweighted=self._use_unweighted)
+                        else:
+                            return node._compute_mpe_path(
+                                summed, *[self._value.values[i.node].read(time)
+                                          if i else None
+                                          for i in inputs],
+                                add_random=self._add_random,
+                                use_unweighted=self._use_unweighted)
+            return down_fun
+
+        # Generate values if not yet generated
+        if not self._value.values:
+            self._value.get_value(root, self._maxlen)
+
+        with tf.name_scope("MPEPath"):
+            # Compute the tensor to feed to the root node
+            graph_input = tf.ones_like(self._value.values[root].read(0))
+
+            # Traverse the graph computing counts
+            compute_graph_up_down_dynamic(root, down_fun_time=down_fun_time,
+                                          graph_input=graph_input, max_len=self._maxlen)

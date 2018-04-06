@@ -46,9 +46,10 @@ class Sum(OpNode):
     __logger = get_logger()
     __info = __logger.info
 
-    def __init__(self, *values, weights=None, ivs=None,
+    def __init__(self, *values, weights=None, ivs=None, template_head=False, interface_head=False,
                  inference_type=InferenceType.MARGINAL, name="Sum"):
-        super().__init__(inference_type, name)
+        super().__init__(inference_type, name,
+                         template_head=template_head, interface_head=interface_head)
         self.set_values(*values)
         self.set_weights(weights)
         self.set_ivs(ivs)

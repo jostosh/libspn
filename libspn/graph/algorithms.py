@@ -10,67 +10,85 @@
 from collections import deque, defaultdict
 import tensorflow as tf
 import libspn.conf as conf
+from collections import OrderedDict
+from libspn.utils.defaultordereddict import DefaultOrderedDict
 
 
-def compute_graph_up_dynamic(root, interface_nodes, template_val_fun, top_val_fun, max_len,
-                             interface_heads, const_fun=None, all_values=None):
+def tensor_array_factory(max_len):
+    def factory(node):
+        return tf.TensorArray(
+            size=max_len, dtype=conf.dtype, clear_after_read=True,
+            name=node.name + "_TensorArray")
 
-    # TODO interface arrays are currently not used
-    interface_arrays = [
-        tf.TensorArray(dtype=conf.dtype, size=max_len, name=r.name + "InterfaceArray")
-        for r in interface_nodes]
+    return factory
 
-    # The top array
-    top_array = tf.TensorArray(dtype=conf.dtype, size=max_len, name="TopArray")
 
-    def compute_single_step(t, interface_values, interface_arrays, top_val, top_array):
-        all_values_step = {}
+def compute_graph_up_dynamic(root, template_val_fun, max_len, const_fun=None, all_values=None):
+
+    all_values_step = OrderedDict()
+    ta_factory = tensor_array_factory(max_len)
+
+    # Get the template head nodes
+    # TODO assumes that template heads are also sourcing other nodes (must be right?)
+    is_template_head = {}
+    compute_graph_up(root, lambda node, *_: node.template_head, all_values=is_template_head)
+    template_heads = [node for node, is_head in is_template_head.items() if is_head]
+
+    # Batch size is needed to generate the 'no evidence' values for interface nodes
+    batch_size = traverse_graph(root, lambda node: node.is_var).batch_size
+
+    def compute_single_step(t, template_head_values, value_arrays, top_val):
 
         # Wrapper for the value function that takes in the time step and the interface values
-        val_fun = template_val_fun(t, interface_values)
-
-        # First we construct the interface node tensors
-        interface_values = [compute_graph_up(
-            interface_node, val_fun=val_fun, const_fun=const_fun, all_values=all_values_step)
-            for interface_node in interface_nodes]
-
-        # If we call compute_graph_up on the head, it will take the values that are already
-        # determined in the compute_graph_up call on the interface node (they should be in the
-        # all_values_step dict
-        heads = [compute_graph_up(head, val_fun=val_fun, const_fun=const_fun,
-                                  all_values=all_values_step) for head in interface_heads]
-
-        # Function wrapper for top value
-        val_fun = top_val_fun(interface_values)
+        template_values_map = {
+            node: val for node, val in zip(template_heads, template_head_values)} \
+            if template_head_values else {}
+        val_fun = template_val_fun(t, template_values_map, batch_size)
 
         # Then, we call compute_graph_up on the actual root of the SPN
         top_val = compute_graph_up(root, val_fun, const_fun=const_fun, all_values=all_values_step)
 
-        # Write the value to the top array
-        top_array = top_array.write(t, top_val)
+        # Get the values of the template heads. These should be used during the next iteration
+        template_head_values = [val for node, val in all_values_step.items()
+                                if node in template_heads]
+
+        with tf.name_scope("TensorArrayLogic"):
+            if not value_arrays:
+                value_arrays = [ta_factory(node) for node in all_values_step.keys()]
+
+            for ind, value_tensor in enumerate(all_values_step.values()):
+                # Write the values to each of the value arrays, indexed by node and time
+                value_arrays[ind] = value_arrays[ind].write(t, value_tensor)
 
         # Increment and return values
-        return t + 1, heads, interface_arrays, top_val, top_array
+        return t + 1, template_head_values, value_arrays, top_val
 
     # TODO try if the first step can also be done in the while loop
     # Compute first step
-    _, interface_init, interface_arrays, top_val, top_array = compute_single_step(
-        0, None, interface_arrays, None, top_array)
+    _, template_head_values, value_arrays, top_val = compute_single_step(0, None, [], None)
+
+    # Remember the node order
+    nodes_order = list(all_values_step.keys())
+
+    # Reset the dict with the values for the current step
+    all_values_step = OrderedDict()
 
     # TODO if the first step is done change start step to 0
     # Compute remaining steps
     step = tf.constant(1)
-    _, final_val, interface_arrays, top_val, top_array = tf.while_loop(
+    _, final_val, value_arrays, top_val = tf.while_loop(
         cond=lambda i, *_: tf.less(i, max_len),
         body=compute_single_step,
-        loop_vars=[step, interface_init, interface_arrays, top_val, top_array])
+        loop_vars=[step, template_head_values, value_arrays, top_val])
 
-    # Stack the interfaces
-    interface_per_step = [arr.stack() for arr in interface_arrays]
+    # Finally we assign the arrays to the dict
+    for node, values in zip(nodes_order, value_arrays):
+        all_values[node] = values
 
     # Stack the values of the top array
-    top_per_step = top_array.stack()
-    return top_val, top_per_step, interface_per_step
+    # top_per_step = top_array.stack()
+    top_per_step = all_values[root].stack()
+    return top_val, top_per_step
 
 
 def compute_graph_up(root, val_fun, const_fun=None, all_values=None):
@@ -218,6 +236,102 @@ def compute_graph_up_down(root, down_fun, graph_input, up_fun=None,
                 except KeyError:
                     # Not all parent values were available
                     pass
+
+
+def compute_graph_up_down_dynamic(root, max_len, down_fun_time, graph_input, down_values=None):
+    """Computes a values for every node in the graph moving first up and then down
+    the graph. When moving up, it behaves exactly as :meth:`compute_graph_up`.
+    When moving down it computes values for each input of a node based on
+    values produced for inputs of parent nodes connected to this node. For this,
+    it traverses the graph breadth-first from the ``root`` node to the leaf nodes.
+
+    Args:
+        root (Node): The root of the SPN graph.
+        down_fun (function): A function ``down_fun(node, parent_vals)``
+            producing values for each input of the ``node``. The argument
+            ``parent_vals`` is a list containing the values obtained for each
+            parent node input connected to this node.
+        graph_input: The value passed as a single parent value to the function
+            computing the values for the root node or a function which computes
+            that value.
+        up_fun (function): A function ``up_fun(node, *args)`` producing a
+            certain value for the ``node``. For an op node, it will have
+            additional arguments with values produced for the input nodes of
+            ``node``. The arguments can be ``None`` if the input was empty.
+        up_values (dict): A dictionary indexed by ``node`` in which values
+            computed for each node during the upward pass will be stored. Can
+            be set to ``None``.
+        down_values (dict): A dictionary indexed by ``node`` in which values
+            computed for each input of a node during the downward pass will be
+            stored. Can be set to ``None``.
+    """
+    parents = defaultdict(list)
+
+    def up_fun_parents(node, *args):
+        """Run up_fun and for each node find parent node inputs having the node
+        connected."""
+        # For each input, add the node and input number as relevant parent node
+        # input to the connected node
+        if node.is_op:
+            for nr, inpt in enumerate(node.inputs):
+                if inpt:
+                    parents[inpt.node].append((node, nr))
+
+    # Traverse up for parents
+    compute_graph_up(root, val_fun=up_fun_parents)
+
+    # Add root node
+    if callable(graph_input):
+        graph_input = graph_input()
+
+    # interface nodes
+    # is_interface_node = {}
+    # compute_graph_up(root, lambda node, *_: node.is_interface, all_values=is_interface_node)
+    # interface_node = [node for node, is_head in is_interface_node.items() if is_head]
+
+    down_values, prev_down_values = dict(), dict()
+    for t in reversed(range(max_len)):
+        down_fun = down_fun_time(t)
+        queue = deque()  # Queue of nodes with computed values, but unprocessed inputs
+        down_values[root] = down_fun(root, [graph_input])
+        if root.is_op:
+            queue.append(root)
+
+        # Traverse down
+        while queue:
+            next_node = queue.popleft()
+
+            # Get unique children unique children
+            children = set(i.node for i in next_node.inputs if i)
+
+            # For each child
+            for child in children:
+
+                # If we have not yet evaluated this child...
+                if child not in down_values:  # Not computed yet
+
+                    # Collect the parent values
+                    parent_vals = []
+                    try:
+                        if child.has_receiver and t > 0:
+                            parent_nodes = prev_down_values[child.receiver]
+                        else:
+                            parent_nodes = parents[child]
+
+                        # Go through list of parents of this child
+                        for parent_node, parent_input_nr in parent_nodes:
+                            parent_vals.append(down_values[parent_node][parent_input_nr])
+                        # All parent values are available, compute value
+                        down_values[child] = down_fun(child, parent_vals)
+
+                        # Enqueue for further processing of children
+                        if child.is_op:
+                            queue.append(child)
+                    except KeyError:
+                        # Not all parent values were available
+                        pass
+        prev_down_values = down_values
+        down_values = dict()
 
 
 def traverse_graph(root, fun, skip_params=False):

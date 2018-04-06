@@ -10,8 +10,12 @@ from types import MappingProxyType
 
 from libspn import Product
 from libspn.graph.algorithms import compute_graph_up, compute_graph_up_dynamic
-from libspn.graph.node import DynamicVarNode
+from libspn.graph.node import DynamicVarNode, InterfaceNode
+import libspn.conf as conf
 from libspn.inference.type import InferenceType
+from collections import defaultdict
+
+from libspn.utils.defaultordereddict import DefaultOrderedDict
 
 
 class Value:
@@ -134,6 +138,7 @@ class DynamicValue:
 
     def __init__(self, inference_type=None):
         self._inference_type = inference_type
+
         self._values = {}
 
     @property
@@ -142,7 +147,7 @@ class DynamicValue:
         operations computing value for each node."""
         return MappingProxyType(self._values)
 
-    def get_value(self, root, interface_nodes, interface_heads, max_len):
+    def get_value(self, root, max_len):
         """Assemble a TF operation computing the values of nodes of the SPN
         rooted in ``root``.
 
@@ -156,29 +161,16 @@ class DynamicValue:
             Tensor: A tensor of shape ``[None, num_outputs]``, where the first
             dimension corresponds to the batch size.
         """
-        def template_val_fun(step, interface_tensors):
+        def template_val_fun(step, source_values, batch_size):
             def fun(node, *args):
                 with tf.name_scope(node.name):
                     kwargs = {}
                     if isinstance(node, DynamicVarNode):
                         kwargs['step'] = step
-                    if isinstance(node, Product) and node.takes_interface:
-                        kwargs['interface_tensors'] = interface_tensors
-                    if (self._inference_type == InferenceType.MARGINAL
-                        or (self._inference_type is None and
-                            node.inference_type == InferenceType.MARGINAL)):
-                        fn = node._compute_value
-                    else:
-                        fn = node._compute_mpe_value
-                    return fn(*args, **kwargs)
-            return fun
-
-        def top_val_fun(interface_tensors):
-            def fun(node, *args):
-                with tf.name_scope(node.name):
-                    kwargs = {}
-                    if isinstance(node, Product) and node.takes_interface:
-                        kwargs['interface_tensors'] = interface_tensors
+                    if isinstance(node, InterfaceNode):
+                        args = [source_values[node.source]] if node.source in source_values else []
+                        kwargs['time'] = step
+                        kwargs['batch_size'] = batch_size
                     if (self._inference_type == InferenceType.MARGINAL
                         or (self._inference_type is None and
                             node.inference_type == InferenceType.MARGINAL)):
@@ -189,14 +181,14 @@ class DynamicValue:
             return fun
 
         self._values = {}
+
         with tf.name_scope("Value"):
             # return compute_graph_up(root, val_fun=fun, all_values=self._values)
-            top_val, top_per_step, interface_per_step = compute_graph_up_dynamic(
-                root=root, interface_nodes=interface_nodes, interface_heads=interface_heads,
-                template_val_fun=template_val_fun, top_val_fun=top_val_fun, max_len=max_len,
+            top_val, top_per_step = compute_graph_up_dynamic(
+                root=root, template_val_fun=template_val_fun, max_len=max_len,
                 all_values=self._values)
 
-        return top_val, top_per_step, interface_per_step
+        return top_val, top_per_step
 
 
 class DynamicLogValue:

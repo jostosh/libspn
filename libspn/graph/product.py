@@ -29,10 +29,12 @@ class Product(OpNode):
     __logger = get_logger()
     __info = __logger.info
 
-    def __init__(self, *values, interface_indices=None, name="Product"):
+    def __init__(self, *values, interface_indices=None, template_head=False, interface_head=False,
+                 name="Product"):
         self._values = []
         self._interface_indices = interface_indices
-        super().__init__(InferenceType.MARGINAL, name)
+        super().__init__(InferenceType.MARGINAL, name, template_head=template_head,
+                         interface_head=interface_head)
         self.set_values(*values)
 
     def serialize(self):

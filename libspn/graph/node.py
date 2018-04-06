@@ -11,6 +11,7 @@ from libspn import utils
 from libspn.inference.type import InferenceType
 from libspn.exceptions import StructureError
 from libspn.graph.algorithms import compute_graph_up, traverse_graph
+from libspn import conf
 
 
 class GraphData():
@@ -203,8 +204,32 @@ class Node(ABC):
             name = "Node"
         self._name = self.tf_graph.unique_name(name)
         self.inference_type = inference_type
+        self._receiver = None
         with tf.name_scope(self._name + "/"):
             self._create()
+
+    def set_receiver(self, receiver):
+        """ Register a new receiver. Can only be an InterfaceNode """
+        if not isinstance(receiver, InterfaceNode):
+            raise TypeError("Receiving node should be interface node")
+        self._receiver = receiver
+
+    @property
+    def has_receiver(self):
+        """Whether this node has a receiver """
+        return self._receiver is not None
+
+    @property
+    def receiver(self):
+        return self._receiver
+
+    @property
+    def interface_head(self):
+        return False
+
+    @property
+    def template_head(self):
+        return False
 
     @abstractmethod
     def serialize(self):
@@ -253,6 +278,12 @@ class Node(ABC):
         """Returns ``True`` if the node is a variable node."""
         # Not the best oop, but avoids the need for importing .node to check
         return isinstance(self, VarNode)
+
+    @property
+    def is_interface(self):
+        """Returns ``True`` if the node is an interface node."""
+        # Not the best oop, but avoids the need for importing .node to check
+        return isinstance(self, InterfaceNode)
 
     def get_tf_graph_size(self):
         """Get the size of the TensorFlow graph with which this SPN graph node is associated."""
@@ -522,6 +553,104 @@ class Node(ABC):
         return id(self) < id(other)
 
 
+class InterfaceNode(Node):
+
+    def __init__(self, inference_type=InferenceType.MARGINAL, name="Interface"):
+        super(InterfaceNode, self).__init__(inference_type=inference_type, name=name)
+        self._source = None
+
+    @property
+    def has_source(self):
+        return self._source is not None
+
+    @property
+    def source(self):
+        return self._source
+
+    def set_source(self, source):
+        source.set_receiver(self)
+        self._source = source
+
+    def _compute_scope(self, *input_scopes):
+        return self._source._compute_scope(*input_scopes)
+
+    def serialize(self):
+        pass
+
+    def _compute_log_mpe_value(self, *input_tensors):
+        pass
+
+    def deserialize(self, data):
+        pass
+
+    @property
+    def _const_out_size(self):
+        pass
+
+    def _compute_dynamic_common(self, *input_tensors, time=None, log=False, batch_size=None):
+
+        def no_evidence():
+            # return None
+            if batch_size is None:
+                raise ValueError("Need to know batch size to construct no evidence values")
+            out_size = self._source.get_out_size()
+            out_size = (out_size,) if isinstance(out_size, int) else out_size
+            shape = (batch_size,) + out_size
+
+            return tf.zeros(shape, dtype=conf.dtype) if log else tf.ones(shape, dtype=conf.dtype)
+
+        if len(input_tensors) == 0:
+            # Act as if no evidence was provided
+            return no_evidence()
+
+        # So there are input tensors
+        if len(input_tensors) != 1:
+            raise ValueError("Number of input tensors should be 1, since we can only have 1 "
+                             "source node for an interface node")
+        if time is None:
+            raise ValueError("Must specify a time step.")
+
+        # Get the source value and return previous step if
+        source_val = input_tensors[0]
+        first_step = tf.equal(time, 0)
+        if isinstance(source_val, tf.TensorArray):
+            return tf.cond(first_step, no_evidence, lambda: source_val.read(time - 1))
+        else:
+            return tf.cond(first_step, no_evidence, lambda: source_val)
+
+    def _compute_valid(self, *input_scopes):
+        return self._source._compute_valid(*input_scopes)
+
+    def _compute_mpe_value(self, *input_tensors, time=None, batch_size=None):
+        return self._compute_dynamic_common(*input_tensors, time=time, log=False,
+                                            batch_size=batch_size)
+
+    def _compute_log_value(self, *input_tensors, time=None, batch_size=None):
+        return self._compute_dynamic_common(*input_tensors, time=time, log=True,
+                                            batch_size=batch_size)
+
+    def _compute_log_mpe_value(self, *input_tensors, time=None, batch_size=None):
+        return self._compute_dynamic_common(*input_tensors, time=time, log=True,
+                                            batch_size=batch_size)
+
+    def _compute_out_size(self, *input_out_sizes):
+        return self._source._compute_out_size(*input_out_sizes)
+
+    def _compute_value(self, *input_tensors, time=None, batch_size=None):
+        return self._compute_dynamic_common(*input_tensors, time=time, log=False,
+                                            batch_size=batch_size)
+
+    def _compute_mpe_path(self, counts, *source_inputs, add_random=None, use_unweighted=None):
+        return self._source._compute_mpe_path(counts, *source_inputs, add_random=add_random,
+                                              use_unweighted=use_unweighted)
+
+    def _compute_log_mpe_path(self, counts, *source_inputs, add_random=None, use_unweighted=None):
+        return self._source._compute_log_mpe_path(counts, *source_inputs, add_random=add_random,
+                                                  use_unweighted=use_unweighted)
+
+
+
+
 class DynamicNode(Node, ABC):
 
     def get_value(self, inference_type=None, step=None):
@@ -733,8 +862,18 @@ class OpNode(Node):
     """
 
     def __init__(self, inference_type=InferenceType.MARGINAL,
-                 name=None):
+                 name=None, template_head=False, interface_head=False):
         super().__init__(inference_type, name)
+        self._template_head = template_head
+        self._interface_head = interface_head
+
+    @property
+    def interface_head(self):
+        return self._interface_head
+
+    @property
+    def template_head(self):
+        return self._template_head
 
     @abstractmethod
     def deserialize_inputs(self, data, nodes_by_name):
@@ -957,6 +1096,14 @@ class DynamicVarNode(Node):
     def deserialize(self, data):
         super().deserialize(data)
         self.attach_feed(None)
+
+    @property
+    def is_var(self):
+        return True
+
+    @property
+    def batch_size(self):
+        return tf.shape(self._feed)[1]
 
     def attach_feed(self, feed):
         """Set a tensor that feeds this node.
