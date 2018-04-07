@@ -285,42 +285,66 @@ def compute_graph_up_down_dynamic(root, down_fun_time, graph_input_end, graph_in
 
     max_steps = get_max_steps(root)
 
+    # We need to know the breadth-first order of the nodes
     node_order = []
     traverse_graph(root, fun=lambda node: node_order.append(node))
 
+    # Initialize the arrays holding the values
     with tf.name_scope("DynamicValueArrayInit"):
         value_arrays = [tf.TensorArray(
             size=max_steps, clear_after_read=True, name=node.name + "CountArray", dtype=conf.dtype)
             for node in node_order]
 
+    # We need to know the sources in breadth-first order as well
     sources = []
+    traverse_graph(root, lambda node: sources.append(node) if node.has_receiver else None)
+
+    # For each of the sources, we will have an array storing the down values of its receiver
+    # in the previous time step. For this to work, we need to pass an initial nested list with
+    # dummy tensors, filled with zero in this case
     prev_down_values = []
     batch_size = get_batch_size(root)
-    traverse_graph(root, lambda node: sources.append(node) if node.has_receiver else None)
-    for source in sources:
-        size = source.get_out_size()
-        shape = (batch_size, size) if isinstance(size, int) else (batch_size,) + size
-        prev_down_for_this_source = []
-        for _ in parents[source.receiver]:
-            prev_down_for_this_source.append(tf.zeros(shape, dtype=conf.dtype))
-        prev_down_values.append(prev_down_for_this_source)
+    with tf.name_scope("SourceValuesPrevInit"):
+        for source in sources:
+            # Determine shape of dummy tensor
+            size = source.get_out_size()
+            shape = (batch_size, size) if isinstance(size, int) else (batch_size,) + size
+            # TODO, maybe we don't need to have a separate tensor for each input
+
+            # For each parent of the receiver, we should have the dummy tensor ready
+            prev_down_for_this_source = []
+            for _ in parents[source.receiver]:
+                prev_down_for_this_source.append(tf.zeros(shape, dtype=conf.dtype))
+
+            # Add the list of dummy tensors to the nested list
+            prev_down_values.append(prev_down_for_this_source)
 
     def single_step(t, prev_down_values, value_arrays):
-        down_values = OrderedDict()
-        down_fun = down_fun_time(t)
+        """Defines a single time step in the MPE path calculation"""
+        down_values = dict()
 
-        combine_parents_fun = combine_parents_fun_time(t)
+        # First, we feed the root of the graph with the graph input (which is optionally unique
+        # for the last step)
+        with tf.name_scope("SelectGraphInput"):
+            root_parent_vals = [tf.cond(
+                tf.equal(t, max_steps - 1), lambda: graph_input_end, lambda: graph_input_default)]
+
+        # The values are then combined, mapping multiple parent tensors to a single one
+        with tf.name_scope("CombineParents") as combine_parents_scope:
+            root_combined_val = combine_parents_fun_time(t, root, root_parent_vals)
+
+        # Write the first tensor to the value arrays
+        with tf.name_scope("WriteValAtStep") as write_val_step_scope:
+            value_arrays[0] = value_arrays[0].write(t, root_combined_val)
+
+        # Compute the tensors to pass down the graph
+        with tf.name_scope("DownFun") as down_fun_scope:
+            down_values[root] = down_fun_time(t, root, root_combined_val)
+
         queue = deque()  # Queue of nodes with computed values, but unprocessed inputs
-
-        root_parent_vals = [tf.cond(
-            tf.equal(t, max_steps - 1), lambda: graph_input_end, lambda: graph_input_default)]
-        root_combined_val = combine_parents_fun(root, root_parent_vals)
-        value_arrays[0] = value_arrays[0].write(t, root_combined_val)
-        down_values[root] = down_fun(root, root_combined_val)
+        # Initialize the queue
         if root.is_op:
             queue.append(root)
-
-        node_ind = 1
 
         # Traverse down
         while queue:
@@ -329,10 +353,7 @@ def compute_graph_up_down_dynamic(root, down_fun_time, graph_input_end, graph_in
             # Get unique children unique children
             children = set(i.node for i in next_node.inputs if i)
 
-            # For each child
             for child in children:
-
-                # If we have not yet evaluated this child...
                 if child not in down_values:  # Not computed yet
                     # Collect the parent values
                     parent_vals = []
@@ -341,96 +362,59 @@ def compute_graph_up_down_dynamic(root, down_fun_time, graph_input_end, graph_in
                         for parent_node, parent_input_nr in parents[child]:
                             parent_vals.append(down_values[parent_node][parent_input_nr])
 
-                        if child.has_receiver:
-                            parent_vals_prev = prev_down_values[sources.index(child)]
-                            # parent_vals_prev = []
-                            # for parent_node, parent_input_nr in parents[child.receiver]:
-                            #     parent_vals_prev.append(
-                            #         prev_down_values[parent_node][parent_input_nr])
-                            combined_val = tf.cond(
-                                tf.less(t, max_steps - 1),
-                                lambda: combine_parents_fun(child, parent_vals_prev),
-                                lambda: combine_parents_fun(child, parent_vals))
-                        else:
-                            # Combine value of parents to get the value of the node
-                            combined_val = combine_parents_fun(child, parent_vals)
-                        value_arrays[node_ind] = value_arrays[node_ind].write(t, combined_val)
-                        # All parent values are available, compute value
-                        down_values[child] = down_fun(child, combined_val)
+                        with tf.name_scope(combine_parents_scope):
+                            if child.has_receiver:
+                                # If this node has a receiver (it is a source), then we should take
+                                # the parent values of its receiver in previous time step
+                                # if t < max_steps - 1, otherwise just take the values of its own
+                                # parent (which will be values coming from the top network)
+                                parent_vals_prev = prev_down_values[sources.index(child)]
+
+                                # This is where you can see that the prev_down_values tensors really
+                                # don't have a meaning other than just pre-occupying memory for the
+                                # while loop_vars
+                                combined_val = tf.cond(
+                                    tf.less(t, max_steps - 1),
+                                    lambda: combine_parents_fun_time(t, child, parent_vals_prev),
+                                    lambda: combine_parents_fun_time(t, child, parent_vals))
+                            else:
+                                # Combine value of parents to get the value of the node
+                                combined_val = combine_parents_fun_time(t, child, parent_vals)
+                        with tf.name_scope(write_val_step_scope):
+                            # Write the combined value to the array
+                            node_ind = node_order.index(child)
+                            value_arrays[node_ind] = value_arrays[node_ind].write(t, combined_val)
+                        with tf.name_scope(down_fun_scope):
+                            # All parent values are available, compute value
+                            down_values[child] = down_fun_time(t, child, combined_val)
 
                         # Enqueue for further processing of children
                         if child.is_op:
                             queue.append(child)
-                        node_ind += 1
 
                     except KeyError:
                         # Not all parent values were available
                         pass
 
-        prev_down_values = []
-        for source in sources:
-            down_values_for_this_source = []
-            for parent_node, parent_input_nr in parents[source.receiver]:
-                down_values_for_this_source.append(down_values[parent_node][parent_input_nr])
-            prev_down_values.append(down_values_for_this_source)
+        # Now we set the prev_down_values for the next step. For each source, we look at the
+        # parents of the receiver. These have their down_values stored in the dict and will be
+        # used in the next iteration.
+        for s_ind, source in enumerate(sources):
+            for inp_ind, (parent_node, parent_input_nr) in enumerate(parents[source.receiver]):
+                prev_down_values[s_ind][inp_ind] = down_values[parent_node][parent_input_nr]
 
         return t - 1, prev_down_values, value_arrays
 
+    # Execute the loop, from t == max_steps - 1 through t == 0
     step = tf.constant(max_steps - 1)
     _, _, value_arrays = tf.while_loop(
         cond=lambda t, *_: tf.greater_equal(t, 0),
         body=single_step,
-        loop_vars=[step, prev_down_values, value_arrays]
+        loop_vars=[step, prev_down_values, value_arrays],
+        name="BackwardLoop"
     )
 
     return {node: arr for node, arr in zip(node_order, value_arrays)}
-    #
-    #
-    #
-    # for t in reversed(range(max_steps)):
-    #     down_fun = down_fun_time(t)
-    #     queue = deque()  # Queue of nodes with computed values, but unprocessed inputs
-    #     down_values[root] = down_fun(
-    #         root, [graph_input_end if t == max_steps - 1 else graph_input_default])
-    #     if root.is_op:
-    #         queue.append(root)
-    #
-    #     # Traverse down
-    #     while queue:
-    #         next_node = queue.popleft()
-    #
-    #         # Get unique children unique children
-    #         children = set(i.node for i in next_node.inputs if i)
-    #
-    #         # For each child
-    #         for child in children:
-    #
-    #             # If we have not yet evaluated this child...
-    #             if child not in down_values:  # Not computed yet
-    #                 # Collect the parent values
-    #                 parent_vals = []
-    #                 try:
-    #                     if child.has_receiver and t < max_steps - 1:
-    #                         parent_nodes = parents[child.receiver]
-    #                         values = prev_down_values
-    #                     else:
-    #                         parent_nodes = parents[child]
-    #                         values = down_values
-    #
-    #                     # Go through list of parents of this child
-    #                     for parent_node, parent_input_nr in parent_nodes:
-    #                         parent_vals.append(values[parent_node][parent_input_nr])
-    #                     # All parent values are available, compute value
-    #                     down_values[child] = down_fun(child, parent_vals)
-    #
-    #                     # Enqueue for further processing of children
-    #                     if child.is_op:
-    #                         queue.append(child)
-    #                 except KeyError:
-    #                     # Not all parent values were available
-    #                     pass
-    #     prev_down_values = down_values
-    #     down_values = dict()
 
 
 def traverse_graph(root, fun, skip_params=False):

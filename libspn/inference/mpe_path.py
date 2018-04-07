@@ -129,62 +129,42 @@ class MPEPath:
             root (Node): The root node of the SPN graph.
         """
 
-        self._counts = DefaultOrderedDict(
-            default_factory=tensor_array_factory(get_max_steps(root)), pass_key=True)
+        def combine_parents_fun_time(t, node, parent_vals):
+            # Sum up all parent vals
+            def accumulate():
+                if len(parent_vals) > 1:
+                    # tf.accumulate_n will complain about a temporary variable being defined more
+                    # than once, so use tf.add_n
+                    return tf.add_n(parent_vals, name=node.name + "_add")
 
-        def combine_parents_fun_time(t):
-            def combine_parents_fun(node, parent_vals):
-                # Sum up all parent vals
-                def accumulate():
-                    if len(parent_vals) > 1:
-                        summed = tf.add_n(parent_vals, name=node.name + "_add")
+                return parent_vals[0]
+
+            if node.is_op and node.interface_head:
+                # This conditional is needed for dealing with t == 0. In that case, the part of the
+                # graph under the interface_head should be disabled (set to zero)
+                return tf.cond(tf.equal(t, 0),
+                               lambda: tf.zeros_like(parent_vals[0]), accumulate)
+            return accumulate()
+
+        def down_fun_time(t, node, summed):
+            if node.is_op:
+                # Compute for inputs
+                with tf.name_scope(node.name):
+
+                    if self._log:
+                        return node._compute_log_mpe_path(
+                            summed, *[self._value.values[i.node].read(t)
+                                      if i else None
+                                      for i in node.inputs],
+                            add_random=self._add_random,
+                            use_unweighted=self._use_unweighted)
                     else:
-                        summed = parent_vals[0]
-                    return summed
-
-                if node.is_op and node.interface_head:
-                    return tf.cond(tf.equal(t, 0),
-                                   lambda: tf.zeros_like(parent_vals[0]), accumulate)
-                return accumulate()
-            return combine_parents_fun
-
-        def down_fun_time(t):
-            def down_fun(node, summed):
-                # # Sum up all parent vals
-                # if t == 0 and node.is_op and node.interface_head:
-                #     summed = tf.zeros_like(parent_vals[0])
-                # else:
-                #     if len(parent_vals) > 1:
-                #         summed = tf.accumulate_n(parent_vals, name=node.name + "_add")
-                #     else:
-                #         summed = parent_vals[0]
-                # with tf.name_scope("WriteCountsToArray"):
-                #     self._counts[node] = self._counts[node].write(t, summed)
-                if node.is_op:
-                    # Compute for inputs
-                    with tf.name_scope(node.name):
-                        # if node.is_interface:
-                        #     inputs = node.source.inputs
-                        #     time = t - 1
-                        # else:
-                        #     inputs = node.inputs
-                        #     time = t
-
-                        if self._log:
-                            return node._compute_log_mpe_path(
-                                summed, *[self._value.values[i.node].read(t)
-                                          if i else None
-                                          for i in node.inputs],
-                                add_random=self._add_random,
-                                use_unweighted=self._use_unweighted)
-                        else:
-                            return node._compute_mpe_path(
-                                summed, *[self._value.values[i.node].read(t)
-                                          if i else None
-                                          for i in node.inputs],
-                                add_random=self._add_random,
-                                use_unweighted=self._use_unweighted)
-            return down_fun
+                        return node._compute_mpe_path(
+                            summed, *[self._value.values[i.node].read(t)
+                                      if i else None
+                                      for i in node.inputs],
+                            add_random=self._add_random,
+                            use_unweighted=self._use_unweighted)
 
         # Generate values if not yet generated
         if not self._value.values:
@@ -203,6 +183,7 @@ class MPEPath:
                 graph_input_default=graph_input_default,
                 combine_parents_fun_time=combine_parents_fun_time)
 
-            for node in self._counts:
-                self._counts[node] = tf.reduce_sum(
-                    self._counts[node].stack(), axis=0, name=node.name + "CountsTotalPerBatch")
+            with tf.name_scope("SumAcrossTime"):
+                for node in self._counts:
+                    self._counts[node] = tf.reduce_sum(
+                        self._counts[node].stack(), axis=0, name=node.name + "CountsTotalPerBatch")
