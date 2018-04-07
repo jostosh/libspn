@@ -38,13 +38,14 @@ class MPEPath:
     """
 
     def __init__(self, value=None, value_inference_type=None, log=True, add_random=None,
-                 use_unweighted=False, dynamic=False):
+                 use_unweighted=False, dynamic=False, dynamic_accumulate_in_loop=True):
         self._counts = {} #if not dynamic else DefaultOrderedDict(
             # default_factory=tensor_array_factory(maxlen), pass_key=True)
         self._log = log
         self._add_random = add_random
         self._use_unweighted = use_unweighted
         self._dynamic = dynamic
+        self._dynamic_accumulate_in_loop = dynamic_accumulate_in_loop
         # Create internal value generator
         if value is None:
             if dynamic:
@@ -177,13 +178,21 @@ class MPEPath:
             graph_input_end = tf.ones(shape=(get_batch_size(root),) + out_size, dtype=conf.dtype)
             graph_input_default = tf.zeros_like(graph_input_end)
 
-            # Traverse the graph computing counts
-            self._counts = compute_graph_up_down_dynamic(
-                root, down_fun_time=down_fun_time, graph_input_end=graph_input_end,
-                graph_input_default=graph_input_default,
-                combine_parents_fun_time=combine_parents_fun_time)
+            if self._dynamic_accumulate_in_loop:
+                # Traverse the graph computing counts
+                self._counts = compute_graph_up_down_dynamic(
+                    root, down_fun_time=down_fun_time, graph_input_end=graph_input_end,
+                    graph_input_default=graph_input_default,
+                    combine_parents_fun_time=combine_parents_fun_time,
+                    accumulator_cwise_op=tf.add, accumulator_init=tf.zeros)
+            else:
+                # Traverse the graph computing counts
+                self._counts = compute_graph_up_down_dynamic(
+                    root, down_fun_time=down_fun_time, graph_input_end=graph_input_end,
+                    graph_input_default=graph_input_default,
+                    combine_parents_fun_time=combine_parents_fun_time)
 
-            with tf.name_scope("SumAcrossTime"):
-                for node in self._counts:
-                    self._counts[node] = tf.reduce_sum(
-                        self._counts[node].stack(), axis=0, name=node.name + "CountsTotalPerBatch")
+                with tf.name_scope("SumAcrossTime"):
+                    for node in self._counts:
+                        self._counts[node] = tf.reduce_sum(
+                            self._counts[node].stack(), axis=0, name=node.name + "CountsTotalPerBatch")

@@ -235,7 +235,8 @@ def compute_graph_up_down(root, down_fun, graph_input, up_fun=None,
 
 
 def compute_graph_up_down_dynamic(root, down_fun_time, graph_input_end, graph_input_default,
-                                  combine_parents_fun_time, down_values=None):
+                                  combine_parents_fun_time, down_values=None, accumulator_init=None,
+                                  accumulator_cwise_op=None):
     """Computes a values for every node in the graph moving first up and then down
     the graph. When moving up, it behaves exactly as :meth:`compute_graph_up`.
     When moving down it computes values for each input of a node based on
@@ -289,11 +290,31 @@ def compute_graph_up_down_dynamic(root, down_fun_time, graph_input_end, graph_in
     node_order = []
     traverse_graph(root, fun=lambda node: node_order.append(node))
 
-    # Initialize the arrays holding the values
-    with tf.name_scope("DynamicValueArrayInit"):
-        value_arrays = [tf.TensorArray(
-            size=max_steps, clear_after_read=True, name=node.name + "CountArray", dtype=conf.dtype)
-            for node in node_order]
+    if accumulator_cwise_op is None or accumulator_init is None:
+        if accumulator_cwise_op is not None or accumulator_init is not None:
+            raise ValueError("Must specify both componenet-wise op and accumulator initializer. "
+                             "Now only one of the two was given.")
+        # Initialize the arrays holding the values
+        with tf.name_scope("DynamicValueArrayInit"):
+            arrays_or_accumulated_output = [tf.TensorArray(
+                size=max_steps, clear_after_read=True, name=node.name + "DownArray",
+                dtype=conf.dtype) for node in node_order]
+
+        def accumulate_or_write(t, val, new_val):
+            return val.write(t, new_val)
+    else:
+        with tf.name_scope("DownValuesInit"):
+            batch_size = get_batch_size(root)
+            arrays_or_accumulated_output = []
+            for node in node_order:
+                out_size = node.get_out_size()
+                out_size = (out_size,) if isinstance(out_size, int) else out_size
+                shape = (batch_size,) + out_size
+                arrays_or_accumulated_output.append(accumulator_init(
+                    shape=shape, name=node.name + "DownInit"))
+
+        def accumulate_or_write(_, val, new_val):
+            return accumulator_cwise_op(val, new_val)
 
     # We need to know the sources in breadth-first order as well
     sources = []
@@ -319,7 +340,7 @@ def compute_graph_up_down_dynamic(root, down_fun_time, graph_input_end, graph_in
             # Add the list of dummy tensors to the nested list
             prev_down_values.append(prev_down_for_this_source)
 
-    def single_step(t, prev_down_values, value_arrays):
+    def single_step(t, prev_down_values, arrays_or_accumulated_output):
         """Defines a single time step in the MPE path calculation"""
         down_values = dict()
 
@@ -335,7 +356,8 @@ def compute_graph_up_down_dynamic(root, down_fun_time, graph_input_end, graph_in
 
         # Write the first tensor to the value arrays
         with tf.name_scope("WriteValAtStep") as write_val_step_scope:
-            value_arrays[0] = value_arrays[0].write(t, root_combined_val)
+            arrays_or_accumulated_output[0] = accumulate_or_write(
+                t, arrays_or_accumulated_output[0], root_combined_val)
 
         # Compute the tensors to pass down the graph
         with tf.name_scope("DownFun") as down_fun_scope:
@@ -381,9 +403,10 @@ def compute_graph_up_down_dynamic(root, down_fun_time, graph_input_end, graph_in
                                 # Combine value of parents to get the value of the node
                                 combined_val = combine_parents_fun_time(t, child, parent_vals)
                         with tf.name_scope(write_val_step_scope):
-                            # Write the combined value to the array
+                            # Write the combined value to the array or accumulate directly
                             node_ind = node_order.index(child)
-                            value_arrays[node_ind] = value_arrays[node_ind].write(t, combined_val)
+                            arrays_or_accumulated_output[node_ind] = accumulate_or_write(
+                                t, arrays_or_accumulated_output[node_ind], combined_val)
                         with tf.name_scope(down_fun_scope):
                             # All parent values are available, compute value
                             down_values[child] = down_fun_time(t, child, combined_val)
@@ -403,18 +426,18 @@ def compute_graph_up_down_dynamic(root, down_fun_time, graph_input_end, graph_in
             for inp_ind, (parent_node, parent_input_nr) in enumerate(parents[source.receiver]):
                 prev_down_values[s_ind][inp_ind] = down_values[parent_node][parent_input_nr]
 
-        return t - 1, prev_down_values, value_arrays
+        return t - 1, prev_down_values, arrays_or_accumulated_output
 
     # Execute the loop, from t == max_steps - 1 through t == 0
     step = tf.constant(max_steps - 1)
-    _, _, value_arrays = tf.while_loop(
+    _, _, arrays_or_accumulated_output = tf.while_loop(
         cond=lambda t, *_: tf.greater_equal(t, 0),
         body=single_step,
-        loop_vars=[step, prev_down_values, value_arrays],
+        loop_vars=[step, prev_down_values, arrays_or_accumulated_output],
         name="BackwardLoop"
     )
 
-    return {node: arr for node, arr in zip(node_order, value_arrays)}
+    return {node: arr for node, arr in zip(node_order, arrays_or_accumulated_output)}
 
 
 def traverse_graph(root, fun, skip_params=False):
