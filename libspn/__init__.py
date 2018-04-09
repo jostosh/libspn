@@ -13,8 +13,11 @@ from libspn.graph.node import Input
 from libspn.graph.node import Node
 from libspn.graph.node import OpNode
 from libspn.graph.node import VarNode
+from libspn.graph.node import DynamicVarNode
 from libspn.graph.node import ParamNode
+from libspn.graph.node import DynamicInterface
 from libspn.graph.ivs import IVs
+from libspn.graph.ivs import DynamicIVs
 from libspn.graph.contvars import ContVars
 from libspn.graph.concat import Concat
 from libspn.graph.sum import Sum
@@ -27,7 +30,9 @@ from libspn.graph.serialization import deserialize_graph
 from libspn.graph.saver import Saver, JSONSaver
 from libspn.graph.loader import Loader, JSONLoader
 from libspn.graph.algorithms import compute_graph_up
+from libspn.graph.algorithms import compute_graph_up_dynamic
 from libspn.graph.algorithms import compute_graph_up_down
+from libspn.graph.algorithms import compute_graph_up_down_dynamic
 from libspn.graph.algorithms import traverse_graph
 
 # Generators
@@ -39,6 +44,8 @@ from libspn.generation.weights import generate_weights
 from libspn.inference.type import InferenceType
 from libspn.inference.value import Value
 from libspn.inference.value import LogValue
+from libspn.inference.value import DynamicValue
+from libspn.inference.value import DynamicLogValue
 from libspn.inference.mpe_path import MPEPath
 from libspn.inference.mpe_state import MPEState
 from libspn.learning.em import EMLearning

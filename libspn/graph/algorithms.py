@@ -577,7 +577,7 @@ def get_batch_size(root):
      it."""
 
     def _batch_size(node):
-        if node.is_dynamic or node.is_var:
+        if node.is_dynamic:
             return True
 
     # Obtain the max steps

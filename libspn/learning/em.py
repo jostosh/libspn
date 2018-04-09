@@ -33,9 +33,14 @@ class EMLearning():
         self._initial_accum_value = initial_accum_value
         # Create internal MPE path generator
         if mpe_path is None:
+            if traverse_graph(root, lambda node: node.is_dynamic):
+                dynamic = True
+            else:
+                dynamic = False
             self._mpe_path = MPEPath(log=log,
                                      value_inference_type=value_inference_type,
-                                     add_random=add_random, use_unweighted=use_unweighted)
+                                     add_random=add_random, use_unweighted=use_unweighted,
+                                     dynamic=dynamic)
         else:
             self._mpe_path = mpe_path
         # Create a name scope
