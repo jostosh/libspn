@@ -210,7 +210,7 @@ class Node(ABC):
 
     def set_receiver(self, receiver):
         """ Register a new receiver. Can only be an InterfaceNode """
-        if not isinstance(receiver, InterfaceNode):
+        if not isinstance(receiver, DynamicInterface):
             raise TypeError("Receiving node should be interface node")
         self._receiver = receiver
 
@@ -283,7 +283,7 @@ class Node(ABC):
     def is_interface(self):
         """Returns ``True`` if the node is an interface node."""
         # Not the best oop, but avoids the need for importing .node to check
-        return isinstance(self, InterfaceNode)
+        return isinstance(self, DynamicInterface)
 
     @property
     def is_dynamic(self):
@@ -558,10 +558,10 @@ class Node(ABC):
         return id(self) < id(other)
 
 
-class InterfaceNode(Node):
+class DynamicInterface(Node):
 
     def __init__(self, inference_type=InferenceType.MARGINAL, name="Interface"):
-        super(InterfaceNode, self).__init__(inference_type=inference_type, name=name)
+        super(DynamicInterface, self).__init__(inference_type=inference_type, name=name)
         self._source = None
 
     @property
@@ -592,57 +592,38 @@ class InterfaceNode(Node):
     def _const_out_size(self):
         pass
 
-    def _compute_dynamic_common(self, *input_tensors, time=None, log=False, batch_size=None):
-
-        def no_evidence():
-            # return None
-            if batch_size is None:
-                raise ValueError("Need to know batch size to construct no evidence values")
-            out_size = self._source.get_out_size()
-            out_size = (out_size,) if isinstance(out_size, int) else out_size
-            shape = (batch_size,) + out_size
-
-            return tf.zeros(shape, dtype=conf.dtype) if log else tf.ones(shape, dtype=conf.dtype)
-
-        if len(input_tensors) == 0:
-            # Act as if no evidence was provided
-            return no_evidence()
+    def _compute_dynamic_common(self, *input_tensors, step=None, log=False, batch_size=None):
 
         # So there are input tensors
         if len(input_tensors) != 1:
             raise ValueError("Number of input tensors should be 1, since we can only have 1 "
                              "source node for an interface node")
-        if time is None:
+        if step is None:
             raise ValueError("Must specify a time step.")
 
         # Get the source value and return previous step if
-        source_val = input_tensors[0]
-        first_step = tf.equal(time, 0)
-        if isinstance(source_val, tf.TensorArray):
-            return tf.cond(first_step, no_evidence, lambda: source_val.read(time - 1))
-        else:
-            return tf.cond(first_step, no_evidence, lambda: source_val)
+        return input_tensors[0]
 
     def _compute_valid(self, *input_scopes):
         return self._source._compute_valid(*input_scopes)
 
-    def _compute_mpe_value(self, *input_tensors, time=None, batch_size=None):
-        return self._compute_dynamic_common(*input_tensors, time=time, log=False,
+    def _compute_mpe_value(self, *input_tensors, step=None, batch_size=None):
+        return self._compute_dynamic_common(*input_tensors, step=step, log=False,
                                             batch_size=batch_size)
 
-    def _compute_log_value(self, *input_tensors, time=None, batch_size=None):
-        return self._compute_dynamic_common(*input_tensors, time=time, log=True,
+    def _compute_log_value(self, *input_tensors, step=None, batch_size=None):
+        return self._compute_dynamic_common(*input_tensors, step=step, log=True,
                                             batch_size=batch_size)
 
-    def _compute_log_mpe_value(self, *input_tensors, time=None, batch_size=None):
-        return self._compute_dynamic_common(*input_tensors, time=time, log=True,
+    def _compute_log_mpe_value(self, *input_tensors, step=None, batch_size=None):
+        return self._compute_dynamic_common(*input_tensors, step=step, log=True,
                                             batch_size=batch_size)
 
     def _compute_out_size(self, *input_out_sizes):
         return self._source._compute_out_size(*input_out_sizes)
 
-    def _compute_value(self, *input_tensors, time=None, batch_size=None):
-        return self._compute_dynamic_common(*input_tensors, time=time, log=False,
+    def _compute_value(self, *input_tensors, step=None, batch_size=None):
+        return self._compute_dynamic_common(*input_tensors, step=step, log=False,
                                             batch_size=batch_size)
 
     def _compute_mpe_path(self, counts, *source_inputs, add_random=None, use_unweighted=None):
@@ -1215,7 +1196,7 @@ class DynamicVarNode(Node, ABC):
             Tensor: A tensor of shape ``[None, out_size]``, where the first
             dimension corresponds to the batch size.
         """
-        return tf.log(self._compute_value())
+        return tf.log(self._compute_value(step))
 
     def _compute_mpe_value(self, step):
         """Assemble TF operations computing the MPE value of this node.

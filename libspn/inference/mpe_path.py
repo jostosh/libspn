@@ -39,8 +39,8 @@ class MPEPath:
 
     def __init__(self, value=None, value_inference_type=None, log=True, add_random=None,
                  use_unweighted=False, dynamic=False, dynamic_accumulate_in_loop=True):
-        self._counts = {} #if not dynamic else DefaultOrderedDict(
-            # default_factory=tensor_array_factory(maxlen), pass_key=True)
+        self._counts = {}
+        self._counts_per_step = {}
         self._log = log
         self._add_random = add_random
         self._use_unweighted = use_unweighted
@@ -72,7 +72,16 @@ class MPEPath:
         tensors computing the branch counts for the inputs of the node."""
         return MappingProxyType(self._counts)
 
-    def _get_mpe_path_feedforward(self, root):
+    @property
+    def counts_per_step(self):
+        """dict: Dictionary indexed by node, where each value is a tensor
+        that computes the counts with dimensions [time, batch, node] """
+        if not self._dynamic:
+            raise AttributeError("MPE path was not configured for a dynamic SPN. Maybe you want to "
+                                 "use dynamic=True when instantiating.")
+        return MappingProxyType(self._counts_per_step)
+
+    def _get_mpe_path_fixed_graph(self, root):
         """Assemble TF operations computing the branch counts for the MPE
         downward path through the SPN rooted in ``root``.
 
@@ -118,11 +127,11 @@ class MPEPath:
 
     def get_mpe_path(self, root):
         if not self._dynamic:
-            self._get_mpe_path_feedforward(root)
+            self._get_mpe_path_fixed_graph(root)
         else:
-            self._get_mpe_path_dynamic(root)
+            self._get_mpe_path_dynamic_graph(root)
 
-    def _get_mpe_path_dynamic(self, root):
+    def _get_mpe_path_dynamic_graph(self, root):
         """Assemble TF operations computing the branch counts for the MPE
         downward path through the SPN rooted in ``root``.
 
@@ -130,7 +139,7 @@ class MPEPath:
             root (Node): The root node of the SPN graph.
         """
 
-        def combine_parents_fun_time(t, node, parent_vals):
+        def reduce_parents_fun_step(t, node, parent_vals):
             # Sum up all parent vals
             def accumulate():
                 if len(parent_vals) > 1:
@@ -181,18 +190,19 @@ class MPEPath:
             if self._dynamic_accumulate_in_loop:
                 # Traverse the graph computing counts
                 self._counts = compute_graph_up_down_dynamic(
-                    root, down_fun_time=down_fun_time, graph_input_end=graph_input_end,
+                    root, down_fun_step=down_fun_time, graph_input_end=graph_input_end,
                     graph_input_default=graph_input_default,
-                    combine_parents_fun_time=combine_parents_fun_time,
-                    accumulator_cwise_op=tf.add, accumulator_init=tf.zeros)
+                    reduce_parents_fun_step=reduce_parents_fun_step, reduce_init=tf.zeros,
+                    reduce_binary_op=tf.add)
             else:
                 # Traverse the graph computing counts
                 self._counts = compute_graph_up_down_dynamic(
-                    root, down_fun_time=down_fun_time, graph_input_end=graph_input_end,
+                    root, down_fun_step=down_fun_time, graph_input_end=graph_input_end,
                     graph_input_default=graph_input_default,
-                    combine_parents_fun_time=combine_parents_fun_time)
+                    reduce_parents_fun_step=reduce_parents_fun_step)
 
-                with tf.name_scope("SumAcrossTime"):
+                with tf.name_scope("SumAcrossSequence"):
                     for node in self._counts:
+                        self._counts_per_step[node] = per_step = self._counts[node].stack()
                         self._counts[node] = tf.reduce_sum(
-                            self._counts[node].stack(), axis=0, name=node.name + "CountsTotalPerBatch")
+                            per_step, axis=0, name=node.name + "CountsTotalPerBatch")
