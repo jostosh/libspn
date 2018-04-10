@@ -58,7 +58,7 @@ class Value(BaseValue):
                 if (self._inference_type == InferenceType.MARGINAL
                     or (self._inference_type is None and
                         node.inference_type == InferenceType.MARGINAL)):
-                    return node._compute_value()
+                    return node._compute_value(*args)
                 else:
                     return node._compute_mpe_value(*args)
 
@@ -131,10 +131,13 @@ class DynamicValue(BaseValue):
                     if (self._inference_type == InferenceType.MARGINAL
                         or (self._inference_type is None and
                             node.inference_type == InferenceType.MARGINAL)):
-                        fn = node._compute_value
+                        return node._compute_value(*args, **kwargs)
                     else:
-                        fn = node._compute_mpe_value
-                    return fn(*args, **kwargs)
+                        val = node._compute_mpe_value(*args, **kwargs)
+                        if node.interface_head:
+                            ones = tf.ones_like(val)
+                            return tf.cond(tf.equal(step, 0), lambda: ones, lambda: val)
+                        return val
             return fun
 
         self._values = {}
@@ -179,10 +182,13 @@ class DynamicLogValue(BaseValue):
                     if (self._inference_type == InferenceType.MARGINAL
                         or (self._inference_type is None and
                             node.inference_type == InferenceType.MARGINAL)):
-                        fn = node._compute_log_value
+                        return node._compute_log_value(*args, **kwargs)
                     else:
-                        fn = node._compute_mpe_log_value
-                    return fn(*args, **kwargs)
+                        val = node._compute_log_mpe_value(*args, **kwargs)
+                        if node.interface_head:
+                            ones = tf.zeros_like(val)
+                            return tf.cond(tf.equal(step, 0), lambda: ones, lambda: val)
+                        return val
             return fun
 
         self._values = {}
