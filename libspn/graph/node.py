@@ -209,7 +209,7 @@ class Node(ABC):
             self._create()
 
     def set_receiver(self, receiver):
-        """ Register a new receiver. Can only be an InterfaceNode """
+        """ Register a new receiver. Can only be an DynamicInterface """
         if not isinstance(receiver, DynamicInterface):
             raise TypeError("Receiving node should be interface node")
         self._receiver = receiver
@@ -560,9 +560,10 @@ class Node(ABC):
 
 class DynamicInterface(Node):
 
-    def __init__(self, inference_type=InferenceType.MARGINAL, name="Interface"):
+    def __init__(self, inference_type=InferenceType.MARGINAL, name="Interface", interface_head=False):
         super(DynamicInterface, self).__init__(inference_type=inference_type, name=name)
         self._source = None
+        self._interface_head = interface_head
 
     @property
     def has_source(self):
@@ -633,8 +634,6 @@ class DynamicInterface(Node):
     def _compute_log_mpe_path(self, counts, *source_inputs, add_random=None, use_unweighted=None):
         return self._source._compute_log_mpe_path(counts, *source_inputs, add_random=add_random,
                                                   use_unweighted=use_unweighted)
-
-
 
 
 class DynamicNode(Node, ABC):
