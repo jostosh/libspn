@@ -100,7 +100,7 @@ class DynamicContVars(DynamicVarNode):
             Tensor: A TF placeholder of shape ``[None, num_vars]``, where the
             first dimension corresponds to the batch size.
         """
-        return tf.placeholder(conf.dtype, [None, self._num_vars])
+        return tf.placeholder(conf.dtype, [self._max_steps, None, self._num_vars])
 
     def _compute_out_size(self):
         return self._num_vars

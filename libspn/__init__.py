@@ -19,6 +19,7 @@ from libspn.graph.node import DynamicInterface
 from libspn.graph.ivs import IVs
 from libspn.graph.ivs import DynamicIVs
 from libspn.graph.contvars import ContVars
+from libspn.graph.contvars import DynamicContVars
 from libspn.graph.concat import Concat
 from libspn.graph.sum import Sum
 from libspn.graph.product import Product
@@ -107,7 +108,8 @@ from libspn.exceptions import StructureError
 __all__ = [
     # Graph
     'Scope', 'Input', 'Node', 'ParamNode', 'OpNode', 'VarNode',
-    'Concat', 'IVs', 'ContVars', 'Sum', 'Product',
+    'DynamicVarNode', 'DynamicInterface',
+    'Concat', 'IVs', 'DynamicIVs', 'ContVars', 'DynamicContVars', 'Sum', 'Product',
     'Weights', 'assign_weights', 'initialize_weights',
     'serialize_graph', 'deserialize_graph',
     'Saver', 'Loader', 'JSONSaver', 'JSONLoader',
