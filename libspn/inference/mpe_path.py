@@ -38,14 +38,14 @@ class MPEPath:
     """
 
     def __init__(self, value=None, value_inference_type=None, log=True, add_random=None,
-                 use_unweighted=False, dynamic=False, dynamic_accumulate_in_loop=True):
+                 use_unweighted=False, dynamic=False, dynamic_reduce_in_loop=True):
         self._counts = {}
         self._counts_per_step = {}
         self._log = log
         self._add_random = add_random
         self._use_unweighted = use_unweighted
         self._dynamic = dynamic
-        self._dynamic_accumulate_in_loop = dynamic_accumulate_in_loop
+        self._dynamic_reduce_in_loop = dynamic_reduce_in_loop
         # Create internal value generator
         if value is None:
             if dynamic:
@@ -187,7 +187,7 @@ class MPEPath:
             graph_input_end = tf.ones(shape=(get_batch_size(root),) + out_size, dtype=conf.dtype)
             graph_input_default = tf.zeros_like(graph_input_end)
 
-            if self._dynamic_accumulate_in_loop:
+            if self._dynamic_reduce_in_loop:
                 # Traverse the graph computing counts
                 self._counts = compute_graph_up_down_dynamic(
                     root, down_fun_step=down_fun_time, graph_input_end=graph_input_end,

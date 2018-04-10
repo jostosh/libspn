@@ -96,7 +96,17 @@ class IVs(VarNode):
 
     def _compute_mpe_state(self, counts):
         r = tf.reshape(counts, (-1, self._num_vars, self._num_vals))
-        return tf.argmax(r, dimension=2)
+
+        out = tf.argmax(r, dimension=2)
+
+        # Check whether we have a sequence dimension in input and reshape output accordingly
+        if len(counts.shape) == 3:
+            shape_tensor = tf.shape(counts)
+            sequence_dim = shape_tensor[0]
+            batch_dim = shape_tensor[1]
+            out = tf.reshape(out, (sequence_dim, batch_dim, self._num_vars))
+
+        return out
 
 
 @register_serializable
@@ -190,5 +200,11 @@ class DynamicIVs(DynamicVarNode):
 
     def _compute_mpe_state(self, counts):
         # TODO not thought about this yet
-        r = tf.reshape(counts, (-1, self._num_vars, self._num_vals))
-        return tf.argmax(r, dimension=2)
+        if len(counts.shape) == 2:
+            r = tf.reshape(counts, (-1, self._num_vars, self._num_vals))
+            return tf.argmax(r, dimension=2)
+        elif len(counts.shape) == 3:
+            r = tf.reshape(counts, (self._max_steps, -1, self._num_vars, self._num_vals))
+            return tf.argmax(r, axis=-1)
+        else:
+            raise ValueError("Counts should be a tensor of either rank 2 or 3.")
