@@ -6,6 +6,8 @@
 # ------------------------------------------------------------------------
 
 import tensorflow as tf
+
+from libspn.graph.algorithms import get_max_steps
 from libspn.inference.mpe_path import MPEPath
 
 
@@ -20,12 +22,14 @@ class MPEState():
                     if ``mpe_path`` is given.
     """
 
-    def __init__(self, mpe_path=None, log=True, value_inference_type=None):
+    def __init__(self, mpe_path=None, log=True, value_inference_type=None, dynamic=False):
         # Create internal MPE path generator
+        self._dynamic = dynamic
         if mpe_path is None:
             self._mpe_path = MPEPath(log=log,
                                      value_inference_type=value_inference_type,
-                                     add_random=None, use_unweighted=False)
+                                     add_random=None, use_unweighted=False, dynamic=dynamic,
+                                     dynamic_reduce_in_loop=False)
         else:
             self._mpe_path = mpe_path
 
@@ -52,6 +56,9 @@ class MPEState():
             self._mpe_path.get_mpe_path(root)
 
         with tf.name_scope("MPEState"):
+            if self._dynamic:
+                return tuple(var_node._compute_mpe_state(
+                    self._mpe_path.counts_per_step[var_node]) for var_node in var_nodes)
+
             return tuple(var_node._compute_mpe_state(
-                self._mpe_path.counts[var_node])
-                for var_node in var_nodes)
+                self._mpe_path.counts[var_node]) for var_node in var_nodes)
