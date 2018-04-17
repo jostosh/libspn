@@ -343,6 +343,50 @@ class Node(ABC):
                                  node._compute_out_size(*args)),
                                 (lambda node: node._const_out_size))
 
+    def get_batch_size(self):
+        """Traverses the graph and returns the batch size any VarNode is in it.
+
+        Returns:
+            Tensor: If dimension is unknown
+            int: If dimension is known
+        """
+
+        node = traverse_graph(self, lambda node, *_: node.is_var, skip_params=True)
+        if node is None:
+            raise StructureError("There is no VarNode in the graph, cannot determine batch size")
+
+        # Determine the size of the dimension
+        axis = 1 if node.is_dynamic and node.time_major else 0
+        dim_size = node.feed.shape[axis].value
+        if dim_size is None:
+            return tf.shape(node.feed)[axis]
+        elif isinstance(dim_size, int):
+            return dim_size
+        else:
+            raise ValueError("The tensor dimension is neither None nor an int.")
+
+    def get_maxlen(self):
+        """Traverses the graph and returns the maximum number of steps if
+        any DynamicVarNode is in it.
+
+        Returns:
+            Tensor: If dimension is unknown
+            int: If dimension is known
+        """
+
+        node = traverse_graph(self, lambda node, *_: node.is_dynamic, skip_params=True)
+        if node is None:
+            raise StructureError("There is no DynamicVarNode in the graph, "
+                                 "cannot determine maxlen.")
+        axis = 0 if node.time_major else 1
+        dim_size = node.feed.shape[axis].value
+        if dim_size is None:
+            return tf.shape(node.feed)[axis]
+        elif isinstance(dim_size, int):
+            return dim_size
+        else:
+            raise ValueError("The tensor dimension is neither None nor an int.")
+
     def get_scope(self):
         """Get the scope of each output value of this node.
 
@@ -1097,6 +1141,10 @@ class DynamicVarNode(Node, ABC):
     @property
     def max_steps(self):
         return self._max_steps
+
+    @property
+    def time_major(self):
+        return self._time_major
 
     def attach_feed(self, feed):
         """Set a tensor that feeds this node.

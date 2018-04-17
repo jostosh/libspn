@@ -6,12 +6,10 @@
 # ------------------------------------------------------------------------
 
 import tensorflow as tf
-
-from libspn.graph.algorithms import get_max_steps
 from libspn.inference.mpe_path import MPEPath
 
 
-class MPEState():
+class MPEState:
     """Assembles TF operations computing MPE state for an SPN.
 
     Args:
@@ -38,7 +36,7 @@ class MPEState():
         """MPEPath: Computed MPE path."""
         return self._mpe_path
 
-    def get_state(self, root, *var_nodes):
+    def get_state(self, root, *var_nodes, sequence_lens=None):
         """Assemble TF operations computing the MPE state of the given SPN
         variables for the SPN rooted in ``root``.
 
@@ -53,7 +51,7 @@ class MPEState():
         """
         # Generate path if not yet generated
         if not self._mpe_path.counts:
-            self._mpe_path.get_mpe_path(root)
+            self._mpe_path.get_mpe_path(root, sequence_lens=sequence_lens)
 
         with tf.name_scope("MPEState"):
             if self._dynamic:

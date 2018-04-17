@@ -33,14 +33,11 @@ class EMLearning():
         self._initial_accum_value = initial_accum_value
         # Create internal MPE path generator
         if mpe_path is None:
-            if traverse_graph(root, lambda node: node.is_dynamic):
-                dynamic = True
-            else:
-                dynamic = False
+            self._dynamic = True if traverse_graph(root, lambda node: node.is_dynamic) else False
             self._mpe_path = MPEPath(log=log,
                                      value_inference_type=value_inference_type,
                                      add_random=add_random, use_unweighted=use_unweighted,
-                                     dynamic=dynamic)
+                                     dynamic=self._dynamic)
         else:
             self._mpe_path = mpe_path
         # Create a name scope
@@ -65,6 +62,14 @@ class EMLearning():
             if pn.node == self._root.weights.node:
                 return pn.accum
         return None
+
+    @property
+    def likelihood(self):
+        """Returns tensor with likelihood of root """
+        if self._dynamic:
+            maxlen = self._root.get_maxlen()
+            return self.value.values[self._root].read(maxlen - 1)
+        return self.value.values[self._root]
 
     def reset_accumulators(self):
         with tf.name_scope(self._name_scope):

@@ -7,12 +7,8 @@
 
 from types import MappingProxyType
 import tensorflow as tf
-
-from libspn import Product
 from libspn.inference.value import Value, LogValue, DynamicValue, DynamicLogValue
-from libspn.graph.algorithms import compute_graph_up_down, compute_graph_up_down_dynamic, \
-    get_batch_size, get_max_steps
-from libspn.utils.defaultordereddict import DefaultOrderedDict
+from libspn.graph.algorithms import compute_graph_up_down, compute_graph_up_down_dynamic
 import libspn.conf as conf
 
 
@@ -125,19 +121,25 @@ class MPEPath:
             self._counts = {}
             compute_graph_up_down(root, down_fun=down_fun, graph_input=graph_input)
 
-    def get_mpe_path(self, root):
+    def get_mpe_path(self, root, sequence_lens=None):
         if not self._dynamic:
+            if sequence_lens is not None:
+                raise ValueError(
+                    "Sequence length is not none, but this MPEPath instance has not been "
+                    "initialized with dynamic=True.")
             self._get_mpe_path_fixed_graph(root)
         else:
-            self._get_mpe_path_dynamic_graph(root)
+            self._get_mpe_path_dynamic_graph(root, sequence_lens=sequence_lens)
 
-    def _get_mpe_path_dynamic_graph(self, root):
+    def _get_mpe_path_dynamic_graph(self, root, sequence_lens=None):
         """Assemble TF operations computing the branch counts for the MPE
         downward path through the SPN rooted in ``root``.
 
         Args:
             root (Node): The root node of the SPN graph.
         """
+        if sequence_lens is not None:
+            time0 = root.get_maxlen() - sequence_lens
 
         def reduce_parents_fun_step(t, node, parent_vals):
             # Sum up all parent vals
@@ -149,11 +151,22 @@ class MPEPath:
 
                 return parent_vals[0]
 
-            if node.is_op and node.interface_head:
-                # This conditional is needed for dealing with t == 0. In that case, the part of the
-                # graph under the interface_head should be disabled (set to zero)
-                return tf.cond(tf.equal(t, 0),
-                               lambda: tf.zeros_like(parent_vals[0]), accumulate)
+            if node.is_op:
+                if sequence_lens is not None:
+                    zeros = tf.zeros_like(parent_vals[0])
+                    if node.interface_head:
+                        return tf.where(tf.less_equal(t, time0), zeros, accumulate())
+                    return tf.where(tf.less(t, time0), zeros, accumulate())
+
+                if node.interface_head:
+                    # This conditional is needed for dealing with t == 0 or
+                    # t <= maxlen - sequence_len.
+                    # In that case, the part of the graph under the interface_head
+                    # should be disabled (set to zero)
+                    return tf.cond(tf.equal(t, 0),
+                                   lambda: tf.zeros_like(parent_vals[0]), accumulate)
+
+            # Default behavior
             return accumulate()
 
         def down_fun_time(t, node, summed):
@@ -178,13 +191,13 @@ class MPEPath:
 
         # Generate values if not yet generated
         if not self._value.values:
-            self._value.get_value(root)
+            self._value.get_value(root, sequence_lens=sequence_lens)
 
         with tf.name_scope("MPEPath"):
             # Compute the tensor to feed to the root node
             out_size = root.get_out_size()
             out_size = (out_size,) if isinstance(out_size, int) else out_size
-            graph_input_end = tf.ones(shape=(get_batch_size(root),) + out_size, dtype=conf.dtype)
+            graph_input_end = tf.ones(shape=(root.get_batch_size(),) + out_size, dtype=conf.dtype)
             graph_input_default = tf.zeros_like(graph_input_end)
 
             if self._dynamic_reduce_in_loop:

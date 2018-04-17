@@ -19,8 +19,8 @@ def compute_graph_up_dynamic(root, val_fun_step, interface_init, const_fun=None,
                              all_values=None):
 
     # Batch size is needed to generate the 'no evidence' values for interface nodes
-    batch_size = get_batch_size(root)
-    max_len = get_max_steps(root)
+    batch_size = root.get_batch_size()
+    max_len = root.get_maxlen()
 
     # Interface nodes should be initialized at t == 0
     interface_nodes = []
@@ -286,7 +286,7 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
     if callable(graph_input_default):
         graph_input_default = graph_input_default()
 
-    max_steps = get_max_steps(root)
+    maxlen = root.get_maxlen()
 
     # We need to know the breadth-first order of the nodes
     node_order = []
@@ -299,14 +299,14 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
         # Initialize the arrays holding the values
         with tf.name_scope("DynamicValueArrayInit"):
             arrays_or_reduced_output = [tf.TensorArray(
-                size=max_steps, clear_after_read=True, name=node.name + "DownArray",
+                size=maxlen, clear_after_read=True, name=node.name + "DownArray",
                 dtype=conf.dtype) for node in node_order]
 
         def reduce_step_or_write(t, val, new_val):
             return val.write(t, new_val)
     else:
         with tf.name_scope("DownValuesInit"):
-            batch_size = get_batch_size(root)
+            batch_size = root.get_batch_size()
             arrays_or_reduced_output = []
             for node in node_order:
                 out_size = node.get_out_size()
@@ -326,7 +326,7 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
     # in the previous time step. For this to work, we need to pass an initial nested list with
     # dummy tensors, filled with zero in this case
     interface_sources_prev = []
-    batch_size = get_batch_size(root)
+    batch_size = root.get_batch_size()
     with tf.name_scope("SourceValuesPrevInit"):
         for source in sources:
             # Determine shape of dummy tensor
@@ -350,7 +350,7 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
         # for the last step)
         with tf.name_scope("SelectGraphInput"):
             root_parent_vals = [tf.cond(
-                tf.equal(t, max_steps - 1), lambda: graph_input_end, lambda: graph_input_default)]
+                tf.equal(t, maxlen - 1), lambda: graph_input_end, lambda: graph_input_default)]
 
         # The values are then combined, mapping multiple parent tensors to a single one
         with tf.name_scope("CombineParents") as combine_parents_scope:
@@ -398,7 +398,7 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
                                 # don't have a meaning other than just pre-occupying memory for the
                                 # while loop_vars
                                 reduced_parents_val = tf.cond(
-                                    tf.less(t, max_steps - 1),
+                                    tf.less(t, maxlen - 1),
                                     lambda: reduce_parents_fun_step(t, child, parent_vals_prev),
                                     lambda: reduce_parents_fun_step(t, child, parent_vals))
                             else:
@@ -431,7 +431,7 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
         return t - 1, interface_sources_prev, arrays_or_reduced_output
 
     # Execute the loop, from t == max_steps - 1 through t == 0
-    step = tf.constant(max_steps - 1)
+    step = tf.constant(maxlen - 1)
     _, _, arrays_or_reduced_output = tf.while_loop(
         cond=lambda t, *_: tf.greater_equal(t, 0),
         body=single_step,
@@ -547,38 +547,3 @@ def traverse_graph(root, fun, skip_params=False):
 #                           up_fun=up_fun, up_values=up_values,
 #                           down_values=down_values, up_skip_params=up_skip_params,
 #                           down_skip_params=down_skip_params)
-def get_max_steps(root):
-    """Traverses the graph and returns the maximum number of steps if any DynamicVarNodes are in
-     it."""
-
-    max_steps = []
-
-    def _node_max_steps(node):
-        if node.is_dynamic:
-            max_steps.append(node.max_steps)
-    # Obtain the max steps
-    traverse_graph(root, _node_max_steps, skip_params=True)
-
-    # If there are no DynamicVarNodes, the length will be zero and the function is undefined
-    if len(max_steps) == 0:
-        raise ValueError("Graph rooted at {} does not contain any dynamic nodes.".format(
-            root.name))
-
-    # Otherwise we make sure that all max_steps are equal
-    if any(max_steps[i] != max_steps[0] for i in range(1, len(max_steps))):
-        raise StructureError("All dynamic nodes should have the same max steps, found {}.".format(
-            set(max_steps)))
-
-    return max_steps[0]
-
-
-def get_batch_size(root):
-    """Traverses the graph and returns the maximum number of steps if any DynamicVarNodes are in
-     it."""
-
-    def _batch_size(node):
-        if node.is_dynamic:
-            return True
-
-    # Obtain the max steps
-    return traverse_graph(root, _batch_size, skip_params=True).batch_size

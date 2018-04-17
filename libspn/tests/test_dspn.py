@@ -7,11 +7,15 @@ from parameterized import parameterized, param
 import itertools
 
 
+MAX_STEPS = 8
+BATCH_SIZE = 8
+
+
 def arg_product(*args):
     return [param(*vals) for vals in itertools.product(*args)]
 
 
-def get_dspn(max_steps=8, iv_inputs=True):
+def get_dspn(max_steps=MAX_STEPS, iv_inputs=True):
 
     tf.set_random_seed(1234)
 
@@ -34,7 +38,6 @@ def get_dspn(max_steps=8, iv_inputs=True):
         z_in = spn.Product(iz, name="ProdZ")
         
         nw = 1
-
 
     mixture_x0_w = spn.Weights(num_weights=nw, name="mixture_x0_w", init_value=weight_init_value)
 
@@ -95,7 +98,7 @@ def get_dspn(max_steps=8, iv_inputs=True):
         top_weights]
 
 
-def get_dspn_unrolled(max_steps=8, iv_inputs=True):
+def get_dspn_unrolled(max_steps=MAX_STEPS, iv_inputs=True):
     template_network = dspn.TemplateNetwork()
 
     weight_init_value = spn.ValueType.RANDOM_UNIFORM()
@@ -163,7 +166,7 @@ def get_dspn_unrolled(max_steps=8, iv_inputs=True):
          top_weights]
 
 
-def get_data(max_steps=8, iv_inputs=True, batch_size=32):
+def get_data(max_steps=MAX_STEPS, iv_inputs=True, batch_size=BATCH_SIZE):
     ix_feed = []
     iy_feed = []
     iz_feed = []
@@ -180,13 +183,21 @@ def get_data(max_steps=8, iv_inputs=True, batch_size=32):
     return [ix_feed, iy_feed, iz_feed]
 
 
-def get_feed_dicts(var_nodes, dynamic_var_nodes, iv_inputs):
+def get_feed_dicts(var_nodes, dynamic_var_nodes, iv_inputs, varlen=False):
     ix_feed, iy_feed, iz_feed = get_data(iv_inputs=iv_inputs)
 
     unrolled_feed = {}
-    for i, step in enumerate(var_nodes):
-        for node, val in zip(step, [ix_feed[i], iy_feed[i], iz_feed[i]]):
-            unrolled_feed[node] = val
+
+    if varlen:
+        for b, var_nodes_step in enumerate(var_nodes):
+            for i, step in enumerate(var_nodes_step):
+                t = MAX_STEPS - len(var_nodes_step) + i
+                for node, val in zip(step, [ix_feed[t][b:b+1], iy_feed[t][b:b+1], iz_feed[t][b:b+1]]):
+                    unrolled_feed[node] = val
+    else:
+        for i, step in enumerate(var_nodes):
+            for node, val in zip(step, [ix_feed[i], iy_feed[i], iz_feed[i]]):
+                unrolled_feed[node] = val
 
     dynamic_feed = {node: np.stack(feed) for node, feed in
                     zip(dynamic_var_nodes, [ix_feed, iy_feed, iz_feed])}
@@ -196,35 +207,60 @@ def get_feed_dicts(var_nodes, dynamic_var_nodes, iv_inputs):
 class TestDSPN(TestCase):
 
     @parameterized.expand(arg_product(
-        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True]))
-    def test_value_ivs(self, log, inf_type, iv_inputs):
-        unrolled_root, var_nodes, unrolled_weights = get_dspn_unrolled(iv_inputs=iv_inputs)
+        [False, True], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],
+        [False, True]))
+    def test_value(self, log, inf_type, iv_inputs, varlen):
+        sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else None
+        sequence_lens_ph = tf.placeholder(tf.int32, [None]) if varlen else None
+
         dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn(iv_inputs=iv_inputs)
-
-        copy_weights = tf.group(*[tf.assign(dw.variable, uw.variable) for dw, uw in
-                                  zip(dynamic_weights, unrolled_weights)])
-
-        unrolled_feed, dynamic_feed = get_feed_dicts(var_nodes, dynamic_var_nodes, iv_inputs)
-
         init_dynamic = spn.initialize_weights(dynamic_root)
-        init_unrolled = spn.initialize_weights(unrolled_root)
+
+        if varlen:
+            unrolled_root_all, var_nodes_all, unrolled_weights_all = [], [], []
+            copy_weight_ops, init_weight_ops = [], []
+            for len in sequence_lens:
+                unrolled_root, var_nodes, unrolled_weights = get_dspn_unrolled(
+                    iv_inputs=iv_inputs, max_steps=len)
+                unrolled_root_all.append(unrolled_root)
+                var_nodes_all.append(var_nodes)
+                unrolled_weights_all.append(unrolled_weights)
+                copy_weight_ops.extend([tf.assign(uw.variable, dw.variable) for dw, uw in
+                                        zip(dynamic_weights, unrolled_weights)])
+
+            copy_weights = tf.group(*copy_weight_ops)
+            unrolled_feed, dynamic_feed = get_feed_dicts(
+                var_nodes_all, dynamic_var_nodes, iv_inputs, varlen=True)
+            dynamic_feed[sequence_lens_ph] = sequence_lens
+
+        else:
+            unrolled_root, var_nodes, unrolled_weights = get_dspn_unrolled(iv_inputs=iv_inputs)
+
+            copy_weights = tf.group(*[tf.assign(uw.variable, dw.variable) for dw, uw in
+                                      zip(dynamic_weights, unrolled_weights)])
+
+            unrolled_feed, dynamic_feed = get_feed_dicts(var_nodes, dynamic_var_nodes, iv_inputs)
 
         if not log:
-            dval = spn.DynamicValue(inf_type).get_value(dynamic_root)
-            uval = spn.Value(inf_type).get_value(unrolled_root)
+            dval = spn.DynamicValue(inf_type).get_value(
+                dynamic_root, sequence_lens=sequence_lens)
+            if varlen:
+                uval = tf.concat(
+                    [spn.Value(inf_type).get_value(root) for root in unrolled_root_all], axis=0)
+            else:
+                uval = spn.Value(inf_type).get_value(unrolled_root)
         else:
-            dval = spn.DynamicLogValue(inf_type).get_value(dynamic_root)
-            uval = spn.LogValue(inf_type).get_value(unrolled_root)
+            dval = spn.DynamicLogValue(inf_type).get_value(
+                dynamic_root, sequence_lens=sequence_lens)
+            if varlen:
+                uval = tf.concat(
+                    [spn.LogValue(inf_type).get_value(root) for root in unrolled_root_all], axis=0)
+            else:
+                uval = spn.LogValue(inf_type).get_value(unrolled_root)
 
         with self.test_session() as sess:
-            sess.run([init_dynamic, init_unrolled])
-            sess.run(copy_weights)
-
-            unrolled_weights_val = sess.run([w.variable for w in unrolled_weights])
-            dynamic_weights_val = sess.run([w.variable for w in dynamic_weights])
-
-            for wu, wd in zip(unrolled_weights_val, dynamic_weights_val):
-                self.assertAllClose(wu, wd)
+            sess.run([init_dynamic])
+            sess.run([copy_weights])
 
             dynamic_out = sess.run(dval, feed_dict=dynamic_feed)
             unrolled_out = sess.run(uval, feed_dict=unrolled_feed)
@@ -232,84 +268,158 @@ class TestDSPN(TestCase):
         self.assertAllClose(dynamic_out, unrolled_out)
 
     @parameterized.expand(arg_product(
-        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True]))
-    def test_mpe_path(self, log, inf_type, iv_inputs):
-        unrolled_root, var_nodes, unrolled_weights = get_dspn_unrolled(iv_inputs=iv_inputs)
+        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],
+        [False, True]))
+    def test_mpe_path(self, log, inf_type, iv_inputs, varlen):
+        sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else None
+        sequence_lens_ph = tf.placeholder(tf.int32, [None]) if varlen else None
+
         dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn(iv_inputs=iv_inputs)
+        if varlen:
+            unrolled_root_all, var_nodes_all, unrolled_weights_all = [], [], []
+            copy_weight_ops, init_weight_ops = [], []
+            for len in sequence_lens:
+                unrolled_root, var_nodes, unrolled_weights = get_dspn_unrolled(
+                    iv_inputs=iv_inputs, max_steps=len)
+                unrolled_root_all.append(unrolled_root)
+                var_nodes_all.append(var_nodes)
+                unrolled_weights_all.append(unrolled_weights)
+                copy_weight_ops.extend([tf.assign(uw.variable, dw.variable) for dw, uw in
+                                        zip(dynamic_weights, unrolled_weights)])
 
-        copy_weights = tf.group(*[tf.assign(dw.variable, uw.variable) for dw, uw in
-                                  zip(dynamic_weights, unrolled_weights)])
+            copy_weights = tf.group(*copy_weight_ops)
+            unrolled_feed, dynamic_feed = get_feed_dicts(
+                var_nodes_all, dynamic_var_nodes, iv_inputs, varlen=True)
+            dynamic_feed[sequence_lens_ph] = sequence_lens
 
-        unrolled_feed, dynamic_feed = get_feed_dicts(var_nodes, dynamic_var_nodes, iv_inputs)
+        else:
+            unrolled_root, var_nodes, unrolled_weights = get_dspn_unrolled(iv_inputs=iv_inputs)
 
+            copy_weights = tf.group(*[tf.assign(uw.variable, dw.variable) for dw, uw in
+                                      zip(dynamic_weights, unrolled_weights)])
+
+            unrolled_feed, dynamic_feed = get_feed_dicts(var_nodes, dynamic_var_nodes, iv_inputs)
         init_dynamic = spn.initialize_weights(dynamic_root)
-        init_unrolled = spn.initialize_weights(unrolled_root)
 
-        pathgen_dynamic = spn.MPEPath(log=log, dynamic=True, dynamic_reduce_in_loop=False,
-                                      value_inference_type=inf_type)
-        pathgen_unrolled = spn.MPEPath(log=log, dynamic=False, value_inference_type=inf_type)
+        pathgen_dynamic = spn.MPEPath(
+            log=log, dynamic=True, dynamic_reduce_in_loop=False, value_inference_type=inf_type)
+        pathgen_unrolled = spn.MPEPath(log=log, value_inference_type=inf_type)
 
-        pathgen_unrolled.get_mpe_path(unrolled_root)
-        pathgen_dynamic.get_mpe_path(dynamic_root)
-
-        xs, ys, zs = [], [], []
-        for var_nodes_per_step in var_nodes:
-            xs.append(pathgen_unrolled.counts[var_nodes_per_step[0]])
-            ys.append(pathgen_unrolled.counts[var_nodes_per_step[1]])
-            zs.append(pathgen_unrolled.counts[var_nodes_per_step[2]])
-        counts_per_step_unrolled = [tf.stack(l) for l in [xs, ys, zs]]
-
+        pathgen_dynamic.get_mpe_path(dynamic_root, sequence_lens=sequence_lens_ph)
+        # print(pathgen_dynamic.counts_per_step.keys())
         counts_per_step_dynamic = [pathgen_dynamic.counts_per_step[n] for n
                                    in dynamic_var_nodes]
 
+        counts_total_dynamic = [pathgen_dynamic.counts[n] for n in dynamic_var_nodes]
+
+        if not varlen:
+            pathgen_unrolled.get_mpe_path(unrolled_root)
+
+            xs, ys, zs = [], [], []
+            for var_nodes_per_step in var_nodes:
+                xs.append(pathgen_unrolled.counts[var_nodes_per_step[0]])
+                ys.append(pathgen_unrolled.counts[var_nodes_per_step[1]])
+                zs.append(pathgen_unrolled.counts[var_nodes_per_step[2]])
+            counts_per_step_unrolled = [tf.stack(l) for l in [xs, ys, zs]]
+        else:
+            xs_batch, ys_batch, zs_batch = [], [], []
+            for unrolled_root, var_nodes in zip(unrolled_root_all, var_nodes_all):
+                pathgen_unrolled = spn.MPEPath(log=log, value_inference_type=inf_type)
+                pathgen_unrolled.get_mpe_path(unrolled_root)
+                xs, ys, zs = [], [], []
+                for var_nodes_per_step in var_nodes:
+                    xs.append(pathgen_unrolled.counts[var_nodes_per_step[0]])
+                    ys.append(pathgen_unrolled.counts[var_nodes_per_step[1]])
+                    zs.append(pathgen_unrolled.counts[var_nodes_per_step[2]])
+                xs_batch.append(tf.add_n(xs))
+                ys_batch.append(tf.add_n(ys))
+                zs_batch.append(tf.add_n(zs))
+            counts_total_unrolled = [tf.concat(arr, axis=0)
+                                     for arr in [xs_batch, ys_batch, zs_batch]]
+
         with self.test_session() as sess:
-            sess.run([init_dynamic, init_unrolled])
+            sess.run([init_dynamic])
             sess.run(copy_weights)
 
-            unrolled_weights_val = sess.run([w.variable for w in unrolled_weights])
-            dynamic_weights_val = sess.run([w.variable for w in dynamic_weights])
+            if varlen:
+                dynamic_out = sess.run(counts_total_dynamic, feed_dict=dynamic_feed)
+                unrolled_out = sess.run(counts_total_unrolled, feed_dict=unrolled_feed)
+            else:
+                dynamic_out = sess.run(counts_per_step_dynamic, feed_dict=dynamic_feed)
+                unrolled_out = sess.run(counts_per_step_unrolled, feed_dict=unrolled_feed)
 
-            for wu, wd in zip(unrolled_weights_val, dynamic_weights_val):
-                self.assertAllClose(wu, wd)
-
-            dynamic_out = sess.run(counts_per_step_dynamic, feed_dict=dynamic_feed)
-            unrolled_out = sess.run(counts_per_step_unrolled, feed_dict=unrolled_feed)
-
-        for do, uo in zip(dynamic_out, unrolled_out):
+        for node, do, uo in zip(dynamic_var_nodes, dynamic_out, unrolled_out):
             self.assertAllClose(do, uo)
 
     @parameterized.expand(arg_product(
-        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True]))
-    def test_mpe_state(self, log, inf_type, iv_inputs):
-        unrolled_root, var_nodes, unrolled_weights = get_dspn_unrolled(iv_inputs=iv_inputs)
+        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],
+        [True, False]))
+    def test_mpe_state(self, log, inf_type, iv_inputs, varlen):
+        sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else None
+        sequence_lens_ph = tf.placeholder(tf.int32, [None]) if varlen else None
+
         dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn(iv_inputs=iv_inputs)
 
-        copy_weights = tf.group(*[tf.assign(dw.variable, uw.variable) for dw, uw in
-                                  zip(dynamic_weights, unrolled_weights)])
+        latent_feed = np.random.randint(-1, 2, size=BATCH_SIZE).reshape((BATCH_SIZE, 1))
+        if varlen:
+            unrolled_root_all, var_nodes_all, unrolled_weights_all = [], [], []
+            copy_weight_ops, init_weight_ops = [], []
+            for seq_len in sequence_lens:
+                unrolled_root, var_nodes, unrolled_weights = get_dspn_unrolled(
+                    iv_inputs=iv_inputs, max_steps=seq_len)
+                unrolled_root_all.append(unrolled_root)
+                var_nodes_all.append(var_nodes)
+                unrolled_weights_all.append(unrolled_weights)
+                copy_weight_ops.extend([tf.assign(uw.variable, dw.variable) for dw, uw in
+                                        zip(dynamic_weights, unrolled_weights)])
 
-        unrolled_feed, dynamic_feed = get_feed_dicts(var_nodes, dynamic_var_nodes,
-                                                     iv_inputs)
+            copy_weights = tf.group(*copy_weight_ops)
+            unrolled_feed, dynamic_feed = get_feed_dicts(
+                var_nodes_all, dynamic_var_nodes, iv_inputs, varlen=True)
+            dynamic_feed[sequence_lens_ph] = sequence_lens
+
+            latent_unr = [root.generate_ivs() for root in unrolled_root_all]
+            for node, feed in zip(latent_unr, latent_feed):
+                unrolled_feed[node] = np.expand_dims(feed, 0)
+        else:
+            unrolled_root, var_nodes, unrolled_weights = get_dspn_unrolled(iv_inputs=iv_inputs)
+
+            copy_weights = tf.group(*[tf.assign(uw.variable, dw.variable) for dw, uw in
+                                      zip(dynamic_weights, unrolled_weights)])
+
+            unrolled_feed, dynamic_feed = get_feed_dicts(var_nodes, dynamic_var_nodes, iv_inputs)
+
+            latent_unr = unrolled_root.generate_ivs()
+            unrolled_feed[latent_unr] = latent_feed
 
         init_dynamic = spn.initialize_weights(dynamic_root)
-        init_unrolled = spn.initialize_weights(unrolled_root)
 
         latent_dyn = dynamic_root.generate_ivs()
-        latent_unr = unrolled_root.generate_ivs()
-
-        latent_feed = np.random.randint(-1, 2, size=32).reshape((32, 1))
-        unrolled_feed[latent_unr] = latent_feed
         dynamic_feed[latent_dyn] = latent_feed
 
         mpe_state_gen_dynamic = spn.MPEState(log=log, dynamic=True, value_inference_type=inf_type)
-        mpe_state_gen_unrolled = spn.MPEState(log=log, dynamic=False, value_inference_type=inf_type)
 
         mpe_latent_dyn, *mpe_ivs_dyn = mpe_state_gen_dynamic.get_state(
-            dynamic_root, latent_dyn, *dynamic_var_nodes)
-        mpe_latent_unr, *mpe_ivs_unr = mpe_state_gen_unrolled.get_state(
-            unrolled_root, latent_unr, *list(itertools.chain(*var_nodes)))
+            dynamic_root, latent_dyn, *dynamic_var_nodes, sequence_lens=sequence_lens_ph)
+        if not varlen:
+            mpe_state_gen_unrolled = spn.MPEState(
+                log=log, dynamic=False, value_inference_type=inf_type)
+            mpe_latent_unr, *mpe_ivs_unr = mpe_state_gen_unrolled.get_state(
+                unrolled_root, latent_unr, *list(itertools.chain(*var_nodes)))
+        else:
+            mpe_ivs_unr_varlen = []
+            mpe_latent_unr_varlen = []
+            for unrolled_root, latent_node, var_nodes in zip(
+                    unrolled_root_all, latent_unr, var_nodes_all):
+                mpe_state_gen_unrolled = spn.MPEState(
+                    log=log, dynamic=False, value_inference_type=inf_type)
+                mpe_latent_unr, *mpe_ivs_unr = mpe_state_gen_unrolled.get_state(
+                    unrolled_root, latent_node, *list(itertools.chain(*var_nodes)))
+                mpe_latent_unr_varlen.append(mpe_latent_unr)
+                mpe_ivs_unr_varlen.append(mpe_ivs_unr)
 
         with self.test_session() as sess:
-            sess.run([init_dynamic, init_unrolled])
+            sess.run(init_dynamic)
             sess.run(copy_weights)
 
             unrolled_weights_val = sess.run([w.variable for w in unrolled_weights])
@@ -320,14 +430,33 @@ class TestDSPN(TestCase):
 
             *mpe_ivs_val_dyn, mpe_latent_val_dyn = sess.run(
                 mpe_ivs_dyn + [mpe_latent_dyn], feed_dict=dynamic_feed)
-            *mpe_ivs_val_unr, mpe_latent_val_unr = sess.run(
-                mpe_ivs_unr + [mpe_latent_unr], feed_dict=unrolled_feed)
+            if not varlen:
+                *mpe_ivs_val_unr, mpe_latent_val_unr = sess.run(
+                    mpe_ivs_unr + [mpe_latent_unr], feed_dict=unrolled_feed)
 
-            mpe_ivs_val_unr = [np.stack(mpe_ivs_val_unr[i::3]) for i in range(3)]
+                mpe_ivs_val_unr = [np.stack(mpe_ivs_val_unr[i::3]) for i in range(3)]
+            else:
+                mpe_ivs_val_unr_all, mpe_latent_val_unr_all = [], []
+                for seq_len, mpe_latent_unr, mpe_ivs_unr in zip(
+                        sequence_lens, mpe_latent_unr_varlen, mpe_ivs_unr_varlen):
+                    *mpe_ivs_val_unr, mpe_latent_val_unr = sess.run(
+                        mpe_ivs_unr + [mpe_latent_unr], feed_dict=unrolled_feed)
+
+                    mpe_ivs_val_unr = [np.concatenate([
+                        np.zeros((MAX_STEPS - seq_len,) + mpe_ivs_val_unr[i].shape),
+                        np.stack(mpe_ivs_val_unr[i::3])])
+                        for i in range(3)]
+                    mpe_ivs_val_unr_all.extend(mpe_ivs_val_unr)
+                    mpe_latent_val_unr_all.append(mpe_latent_val_unr)
+
+                mpe_ivs_val_unr = [
+                    np.concatenate(mpe_ivs_val_unr_all[i::3], axis=1) for i in range(3)]
+
+                mpe_latent_val_unr = np.concatenate(mpe_latent_val_unr_all, axis=0)
 
         self.assertAllClose(mpe_latent_val_dyn[-1], mpe_latent_val_unr)
         for do, uo in zip(mpe_ivs_val_dyn, mpe_ivs_val_unr):
-            self.assertAllClose(do, uo)
+            self.assertAllClose(np.squeeze(do), np.squeeze(uo))
 
     @parameterized.expand(arg_product(
         [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True]))
@@ -346,13 +475,13 @@ class TestDSPN(TestCase):
 
         accum_upd_dyn, learning_dyn, reset_acc_dyn, update_spn_dyn = self.setup_training(
             dynamic_root, inf_type, log=log)
-        likelihood_dyn = learning_dyn.value.values[dynamic_root].read(7)
+        likelihood_dyn = learning_dyn.likelihood
 
         accum_upd_unr, learning_unr, reset_acc_unr, update_spn_unr = self.setup_training(
             unrolled_root, inf_type, log=log)
-        likelihood_unr = learning_unr.value.values[unrolled_root]
+        likelihood_unr = learning_unr.likelihood
 
-        latent_feed = np.random.randint(0, 2, size=32).reshape((32, 1))
+        latent_feed = np.random.randint(0, 2, size=BATCH_SIZE).reshape((BATCH_SIZE, 1))
         unrolled_feed[latent_unr] = latent_feed
         dynamic_feed[latent_dyn] = latent_feed
 

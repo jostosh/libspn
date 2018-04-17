@@ -102,7 +102,7 @@ class LogValue(BaseValue):
 
 class DynamicValue(BaseValue):
 
-    def get_value(self, root, return_sequence=False):
+    def get_value(self, root, return_sequence=False, sequence_lens=None):
         """Assemble a TF operation computing the values of nodes of the SPN
         rooted in ``root``.
 
@@ -116,6 +116,9 @@ class DynamicValue(BaseValue):
             Tensor: A tensor of shape ``[None, num_outputs]``, where the first
             dimension corresponds to the batch size.
         """
+        if sequence_lens is not None:
+            time0 = root.get_maxlen() - sequence_lens
+
         def template_val_fun(step, interface_value_map):
             def fun(node, *args):
                 with tf.name_scope(node.name):
@@ -131,13 +134,20 @@ class DynamicValue(BaseValue):
                     if (self._inference_type == InferenceType.MARGINAL
                         or (self._inference_type is None and
                             node.inference_type == InferenceType.MARGINAL)):
-                        return node._compute_value(*args, **kwargs)
+                        val = node._compute_value(*args, **kwargs)
                     else:
                         val = node._compute_mpe_value(*args, **kwargs)
+                    if sequence_lens is not None and not node.is_param:
+                        # If we have sequences with possibly different lengths
+                        ones = tf.ones_like(val)
                         if node.interface_head:
-                            ones = tf.ones_like(val)
-                            return tf.cond(tf.equal(step, 0), lambda: ones, lambda: val)
-                        return val
+                            # In case we have sequences with same length
+                            return tf.where(tf.less_equal(step, time0), ones, val)
+                        return tf.where(tf.less(step, time0), ones, val)
+                    if node.interface_head:
+                        # In case we have sequences with same length
+                        return tf.cond(tf.equal(step, 0), lambda: tf.ones_like(val), lambda: val)
+                    return val
             return fun
 
         self._values = {}
@@ -155,7 +165,7 @@ class DynamicValue(BaseValue):
 
 class DynamicLogValue(BaseValue):
 
-    def get_value(self, root, return_sequence=False):
+    def get_value(self, root, return_sequence=False, sequence_lens=None):
         """Assemble a TF operation computing the values of nodes of the SPN
         rooted in ``root``.
 
@@ -169,6 +179,8 @@ class DynamicLogValue(BaseValue):
             Tensor: A tensor of shape ``[None, num_outputs]``, where the first
             dimension corresponds to the batch size.
         """
+        if sequence_lens is not None:
+            time0 = root.get_maxlen() - sequence_lens
 
         def val_fun_step(step, interface_value_map):
             def fun(node, *args):
@@ -182,13 +194,20 @@ class DynamicLogValue(BaseValue):
                     if (self._inference_type == InferenceType.MARGINAL
                         or (self._inference_type is None and
                             node.inference_type == InferenceType.MARGINAL)):
-                        return node._compute_log_value(*args, **kwargs)
+                        val = node._compute_log_value(*args, **kwargs)
                     else:
                         val = node._compute_log_mpe_value(*args, **kwargs)
+                    if sequence_lens is not None and not node.is_param:
+                        # If we have sequences with possibly different lengths
+                        zeros = tf.zeros_like(val)
                         if node.interface_head:
-                            ones = tf.zeros_like(val)
-                            return tf.cond(tf.equal(step, 0), lambda: ones, lambda: val)
-                        return val
+                            # In case we have sequences with same length
+                            return tf.where(tf.less_equal(step, time0), zeros, val)
+                        return tf.where(tf.less(step, time0), zeros, val)
+                    if node.interface_head:
+                        # In case we have sequences with same length
+                        return tf.cond(tf.equal(step, 0), lambda: tf.zeros_like(val), lambda: val)
+                    return val
             return fun
 
         self._values = {}
