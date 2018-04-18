@@ -107,7 +107,7 @@ class DenseSPNGenerator:
         # Stirling numbers and ratios for partition sampling
         self.__stirling = utils.Stirling()
 
-    def generate(self, *inputs, rnd=None, root_name=None):
+    def generate(self, *inputs, rnd=None, root_name=None, num_roots=1, root_sum=True):
         """Generate the SPN.
 
         Args:
@@ -132,13 +132,18 @@ class DenseSPNGenerator:
                       len(input_set))
 
         # Create root
-        root = Sum(name=root_name)
+        if root_sum:
+            roots = [Sum(name=root_name)] if num_roots == 1 else \
+                [Sum(name="{}{}".format(root_name, i)) for i in range(num_roots)]
+        else:
+            roots = [Product(name=root_name)] if num_roots == 1 else \
+                [Product(name="{}{}".format(root_name, i)) for i in range(num_roots)]
 
         # Subsets left to process
         subsets = deque()
         subsets.append(DenseSPNGenerator.SubsetInfo(level=1,
                                                     subset=input_set,
-                                                    parents=[root]))
+                                                    parents=roots))
 
         # Process subsets layer by layer
         self.__decomp_id = 1  # Id number of a decomposition, for info only
@@ -152,7 +157,7 @@ class DenseSPNGenerator:
                 for s in new_subsets:
                     subsets.append(s)
 
-        return root
+        return roots[0] if num_roots == 1 else roots
 
     def __generate_set(self, inputs):
         """Generate a set of inputs to the generated SPN grouped by scope.
