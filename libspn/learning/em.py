@@ -27,10 +27,11 @@ class EMLearning():
 
     def __init__(self, root, mpe_path=None, log=True, value_inference_type=None,
                  additive_smoothing=None, add_random=None, initial_accum_value=None,
-                 use_unweighted=False):
+                 use_unweighted=False, sequence_lens=None):
         self._root = root
         self._additive_smoothing = additive_smoothing
         self._initial_accum_value = initial_accum_value
+        self._sequence_lens = sequence_lens
         # Create internal MPE path generator
         if mpe_path is None:
             self._dynamic = True if traverse_graph(root, lambda node: node.is_dynamic) else False
@@ -63,7 +64,6 @@ class EMLearning():
                 return pn.accum
         return None
 
-    @property
     def likelihood(self):
         """Returns tensor with likelihood of root """
         if self._dynamic:
@@ -79,7 +79,7 @@ class EMLearning():
     def accumulate_updates(self):
         # Generate path if not yet generated
         if not self._mpe_path.counts:
-            self._mpe_path.get_mpe_path(self._root)
+            self._mpe_path.get_mpe_path(self._root, sequence_lens=self._sequence_lens)
 
         # Generate all accumulate operations
         with tf.name_scope(self._name_scope):

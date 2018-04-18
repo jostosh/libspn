@@ -475,11 +475,11 @@ class TestDSPN(TestCase):
 
         accum_upd_dyn, learning_dyn, reset_acc_dyn, update_spn_dyn = self.setup_training(
             dynamic_root, inf_type, log=log)
-        likelihood_dyn = learning_dyn.likelihood
+        likelihood_dyn = learning_dyn.likelihood()
 
         accum_upd_unr, learning_unr, reset_acc_unr, update_spn_unr = self.setup_training(
             unrolled_root, inf_type, log=log)
-        likelihood_unr = learning_unr.likelihood
+        likelihood_unr = learning_unr.likelihood()
 
         latent_feed = np.random.randint(0, 2, size=BATCH_SIZE).reshape((BATCH_SIZE, 1))
         unrolled_feed[latent_unr] = latent_feed
