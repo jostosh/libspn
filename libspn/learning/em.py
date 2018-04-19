@@ -56,14 +56,14 @@ class EMLearning():
 
     # TODO: For testing only
     def root_accum(self):
-        for pn in self._trainable_nodes:
+        for pn in self._param_nodes:
             if pn.node == self._root.weights.node:
                 return pn.accum
         return None
 
     def reset_accumulators(self):
         with tf.name_scope(self._name_scope):
-            return tf.group(*[pn.accum.initializer for pn in self._trainable_nodes],
+            return tf.group(*[pn.accum.initializer for pn in self._param_nodes],
                             name="reset_accumulators")
 
     def accumulate_updates(self):
@@ -74,7 +74,7 @@ class EMLearning():
         # Generate all accumulate operations
         with tf.name_scope(self._name_scope):
             assign_ops = []
-            for pn in self._trainable_nodes:
+            for pn in self._param_nodes:
                 with tf.name_scope(pn.name_scope):
                     counts = self._mpe_path.counts[pn.node]
                     update_value = pn.node._compute_hard_em_update(counts)
@@ -86,7 +86,7 @@ class EMLearning():
         # Generate all update operations
         with tf.name_scope(self._name_scope):
             assign_ops = []
-            for pn in self._trainable_nodes:
+            for pn in self._param_nodes:
                 with tf.name_scope(pn.name_scope):
                     accum = pn.accum
                     if self._additive_smoothing is not None:
@@ -100,20 +100,9 @@ class EMLearning():
 
     def _create_accumulators(self):
         def fun(node):
-            if node.is_param or node.is_distribution:
+            if node.is_param:
                 with tf.name_scope(node.name) as scope:
-                    if node.is_distribution:
-                        var = node.variables[0]
-                    else:
-                        var = node.variable
                     if self._initial_accum_value is not None:
-<<<<<<< HEAD
-                        accum = tf.Variable(tf.ones_like(var,
-                                                         dtype=conf.dtype) *
-                                            self._initial_accum_value,
-                                            dtype=conf.dtype,
-                                            collections=['em_accumulators'])
-=======
                         if node.mask and not all(node.mask):
                             accum = tf.Variable(tf.cast(tf.reshape(node.mask,
                                                 node.variable.shape),
@@ -127,17 +116,16 @@ class EMLearning():
                                                 self._initial_accum_value,
                                                 dtype=conf.dtype,
                                                 collections=['em_accumulators'])
->>>>>>> nash911/gd_learning
                     else:
-                        accum = tf.Variable(tf.zeros_like(var,
+                        accum = tf.Variable(tf.zeros_like(node.variable,
                                                           dtype=conf.dtype),
                                             dtype=conf.dtype,
                                             collections=['em_accumulators'])
-                    distribution_node = EMLearning.ParamNode(
-                        node=node, accum=accum, name_scope=scope)
-                    self._trainable_nodes.append(distribution_node)
+                    param_node = EMLearning.ParamNode(node=node, accum=accum,
+                                                      name_scope=scope)
+                    self._param_nodes.append(param_node)
 
-        self._trainable_nodes = []
+        self._param_nodes = []
         with tf.name_scope(self._name_scope):
             traverse_graph(self._root, fun=fun)
 
