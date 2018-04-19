@@ -296,8 +296,9 @@ class Sum(OpNode):
                                  ivs_value, *value_values):
         # Propagate the counts to the max value
         max_indices = tf.argmax(values_weighted, dimension=1)
-        max_counts = tf.one_hot(max_indices,
-                                values_weighted.get_shape()[1]) * counts
+        max_counts = utils.scatter_values(params=tf.squeeze(counts, axis=1),
+                                          indices=max_indices,
+                                          num_out_cols=values_weighted.shape[1].value)
         # Split the counts to value inputs
         _, _, *value_sizes = self.get_input_sizes(None, None, *value_values)
         max_counts_split = utils.split_maybe(max_counts, value_sizes, 1)
@@ -307,21 +308,21 @@ class Sum(OpNode):
             *[(t, v) for t, v in zip(max_counts_split, value_values)])  # Values
 
     def _compute_mpe_path(self, counts, weight_value, ivs_value, *value_values,
-                          add_random=None, use_unweighted=False):
+                          add_random=None, use_unweighted=False, with_ivs=True):
         # Get weighted, IV selected values
         weight_value, ivs_value, values = self._compute_value_common(
             weight_value, ivs_value, *value_values)
-        values_selected = values * ivs_value if self._ivs else values
+        values_selected = values * ivs_value if self._ivs and with_ivs else values
         values_weighted = values_selected * weight_value
         return self._compute_mpe_path_common(
             values_weighted, counts, weight_value, ivs_value, *value_values)
 
     def _compute_log_mpe_path(self, counts, weight_value, ivs_value, *value_values,
-                              add_random=None, use_unweighted=False):
+                              add_random=None, use_unweighted=False, with_ivs=True):
         # Get weighted, IV selected values
         weight_value, ivs_value, values = self._compute_value_common(
             weight_value, ivs_value, *value_values)
-        values_selected = values + ivs_value if self._ivs else values
+        values_selected = values + ivs_value if self._ivs and with_ivs else values
 
         # WARN USING UNWEIGHTED VALUE
         if not use_unweighted or any(v.node.is_var for v in self._values):
@@ -335,7 +336,7 @@ class Sum(OpNode):
         if add_random is not None:
             values_weighted = tf.add(values_weighted, tf.random_uniform(
                 shape=(tf.shape(values_weighted)[0],
-                       int(values_weighted.get_shape()[1])),
+                       values_weighted.shape[1].value),
                 minval=0, maxval=add_random,
                 dtype=conf.dtype))
         # /ADDING RANDOM NUMBERS

@@ -18,7 +18,13 @@ from libspn.graph.ivs import IVs
 from libspn.graph.contvars import ContVars
 from libspn.graph.concat import Concat
 from libspn.graph.sum import Sum
+from libspn.graph.parsums import ParSums
+from libspn.graph.sums import Sums
+from libspn.graph.sumslayer import SumsLayer
 from libspn.graph.product import Product
+from libspn.graph.permproducts import PermProducts
+from libspn.graph.products import Products
+from libspn.graph.productslayer import ProductsLayer
 from libspn.graph.weights import Weights
 from libspn.graph.weights import assign_weights
 from libspn.graph.weights import initialize_weights
@@ -33,6 +39,8 @@ from libspn.graph.distribution import GaussianQuantile
 
 # Generators
 from libspn.generation.dense import DenseSPNGenerator
+from libspn.generation.dense_multinodes import DenseSPNGeneratorMultiNodes
+from libspn.generation.dense_layernodes import DenseSPNGeneratorLayerNodes
 from libspn.generation.weights import WeightsGenerator
 from libspn.generation.weights import generate_weights
 
@@ -44,6 +52,7 @@ from libspn.inference.mpe_path import MPEPath
 from libspn.inference.mpe_state import MPEState
 from libspn.learning.em import EMLearning
 from libspn.learning.gd import GDLearning
+from libspn.learning.type import LearningType
 
 # Data
 from libspn.data.dataset import Dataset
@@ -101,7 +110,9 @@ from libspn.exceptions import StructureError
 __all__ = [
     # Graph
     'Scope', 'Input', 'Node', 'ParamNode', 'OpNode', 'VarNode',
-    'Concat', 'IVs', 'ContVars', 'Sum', 'Product',
+    'Concat', 'IVs', 'ContVars',
+    'Sum', 'ParSums', 'Sums', 'SumsLayer',
+    'Product', 'PermProducts', 'Products', 'ProductsLayer',
     'GaussianQuantile',
     'Weights', 'assign_weights', 'initialize_weights',
     'serialize_graph', 'deserialize_graph',
@@ -113,7 +124,7 @@ __all__ = [
     'generate_weights',
     # Inference and learning
     'InferenceType', 'Value', 'LogValue', 'MPEPath', 'MPEState',
-    'EMLearning', 'GDLearning',
+    'EMLearning', 'GDLearning', 'LearningType',
     # Data
     'Dataset', 'FileDataset', 'CSVFileDataset', 'GaussianMixtureDataset',
     'IntGridDataset', 'ImageFormat', 'ImageShape', 'ImageDatasetBase',

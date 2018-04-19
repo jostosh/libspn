@@ -12,6 +12,8 @@ from libspn import conf
 from libspn.utils.serialization import register_serializable
 from libspn import utils
 
+import numbers
+
 
 @register_serializable
 class Weights(ParamNode):
@@ -21,33 +23,45 @@ class Weights(ParamNode):
         init_value: Initial value of the weights. For possible values, see
                     :meth:`~libspn.utils.broadcast_value`.
         num_weights (int): Number of weights in the vector.
+        num_sums (int): Number of sum nodes the weight vector/matrix represents.
+        mask (list): List of booleans with num_weights * num_sums elements, used for masking weights
         name (str): Name of the node.
 
     Attributes:
         trainable(bool): Should these weights be updated during training?
     """
 
-    def __init__(self, init_value=1, num_weights=1,
-                 trainable=True, name="Weights"):
+    def __init__(self, init_value=1, num_weights=1, num_sums=1, trainable=True, mask=None,
+                 name="Weights"):
         if not isinstance(num_weights, int) or num_weights < 1:
             raise ValueError("num_weights must be a positive integer")
+
+        if not isinstance(num_sums, int) or num_sums < 1:
+            raise ValueError("num_sums must be a positive integer")
+
         self._init_value = init_value
         self._num_weights = num_weights
+        self._num_sums = num_sums
         self._trainable = trainable
+        self._mask = mask
         super().__init__(name)
 
     def serialize(self):
         data = super().serialize()
         data['num_weights'] = self._num_weights
+        data['num_sums'] = self._num_sums
         data['trainable'] = self._trainable
         data['init_value'] = self._init_value
         data['value'] = self._variable
+        data['mask'] = self._mask
         return data
 
     def deserialize(self, data):
         self._init_value = data['init_value']
         self._num_weights = data['num_weights']
+        self._num_sums = data['num_sums']
         self._trainable = data['trainable']
+        self._mask = data['mask']
         super().deserialize(data)
         # Create an op for deserializing value
         v = data['value']
@@ -58,14 +72,24 @@ class Weights(ParamNode):
             return None
 
     @property
+    def mask(self):
+        """list(int): Boolean mask for weights"""
+        return self._mask
+
+    @property
     def num_weights(self):
         """int: Number of weights in the vector."""
         return self._num_weights
 
     @property
+    def num_sums(self):
+        """int: Number of sum nodes the weights vector/matrix represents."""
+        return self._num_sums
+
+    @property
     def variable(self):
-        """Variable: The TF variable of shape ``[num_weights]`` holding the
-        weights."""
+        """Variable: The TF variable of shape ``[num_sums, num_weights]``
+        holding the weights."""
         return self._variable
 
     def initialize(self):
@@ -86,9 +110,16 @@ class Weights(ParamNode):
         Returns:
             Tensor: The assignment operation.
         """
-        value = utils.broadcast_value(value, (self._num_weights,),
-                                      dtype=conf.dtype)
-        value = utils.normalize_tensor(value)
+        if isinstance(value, utils.ValueType.RANDOM_UNIFORM) \
+           or isinstance(value, numbers.Real):
+            shape = self._num_sums * self._num_weights
+        else:
+            shape = self._num_weights
+        value = utils.broadcast_value(value, (shape,), dtype=conf.dtype)
+        if self._mask and not all(self._mask):
+            # Only perform masking if mask is given and mask contains any 'False'
+            value *= tf.cast(tf.reshape(self._mask, value.shape), dtype=conf.dtype)
+        value = utils.normalize_tensor_2D(value, self._num_weights, self._num_sums)
         return tf.assign(self._variable, value)
 
     def _create(self):
@@ -97,21 +128,45 @@ class Weights(ParamNode):
         Returns:
             Variable: A TF variable of shape ``[num_weights]``.
         """
+        if isinstance(self._init_value, utils.ValueType.RANDOM_UNIFORM) \
+           or isinstance(self._init_value, numbers.Real):
+            shape = self._num_sums * self._num_weights
+        else:
+            shape = self._num_weights
         init_val = utils.broadcast_value(self._init_value,
-                                         (self._num_weights,),
+                                         shape=(shape,),
                                          dtype=conf.dtype)
-        init_val = utils.normalize_tensor(init_val)
+        if self._mask and not all(self._mask):
+            # Only perform masking if mask is given and mask contains any 'False'
+            init_val *= tf.cast(tf.reshape(self._mask, init_val.shape), dtype=conf.dtype)
+        init_val = utils.normalize_tensor_2D(init_val, self._num_weights,
+                                             self._num_sums)
         self._variable = tf.Variable(init_val, dtype=conf.dtype,
                                      collections=['spn_weights'])
 
     def _compute_out_size(self):
-        return self._num_weights
+        return self._num_weights * self._num_sums
 
     def _compute_value(self):
         return self._variable
 
     def _compute_hard_em_update(self, counts):
-        return tf.reduce_sum(counts, 0)
+        # TODO: Need a better way to determing rank of counts
+        if self.num_sums == 1:
+            return tf.reduce_sum(counts, axis=0, keep_dims=True)
+        else:
+            return tf.reduce_sum(counts, axis=0, keep_dims=False)
+
+    def _compute_hard_gd_update(self, counts, actual_counts=None):
+        if actual_counts is not None:
+            delta_counts = tf.subtract(counts, actual_counts)
+        else:
+            delta_counts = counts
+        # TODO: Need a better way to determing rank of counts
+        if self.num_sums == 1:
+            return tf.reduce_sum(delta_counts, axis=0, keep_dims=True)
+        else:
+            return tf.reduce_sum(delta_counts, axis=0, keep_dims=False)
 
 
 def assign_weights(root, value, name=None):

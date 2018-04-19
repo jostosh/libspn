@@ -19,3 +19,13 @@ custom_gather_cols = True
 custom_scatter_cols = True
 """Whether to use custom op for implementing
 :meth:`~libspn.utils.scatter_cols`."""
+
+custom_scatter_values = True
+"""Whether to use custom op for implementing
+:meth:`~libspn.utils.scatter_values`."""
+
+sumslayer_count_sum_strategy = "gather"
+"""Strategy to apply when summing counts
+within a SumsLayer. Can be 'matmul', 'gather',
+'segmented' or 'None'
+"""
