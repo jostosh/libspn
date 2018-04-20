@@ -140,7 +140,7 @@ class GaussianQuantile(DistributionNode):
         self._built = False
         super().__init__(feed, num_vars=num_vars, name=name)
 
-    def learn_from_data(self, data):
+    def learn_from_data(self, data, use_prior=False, prior_alpha=2, prior_beta=3):
         """Learns the distribution parameters from data
         Params:
             data: numpy.ndarray of shape [batch, num_vars]
@@ -152,7 +152,13 @@ class GaussianQuantile(DistributionNode):
         values_per_quantile = self._values_per_quantile(data)
 
         self._means = [np.mean(values, axis=0) for values in values_per_quantile]
-        self._stddevs = [np.std(values, axis=0) for values in values_per_quantile]
+        if use_prior:
+            sum_sq = [np.sum((x - np.expand_dims(mu, 0)) ** 2, axis=0)
+                      for x, mu in zip(values_per_quantile, self._means)]
+            variance = [(2 * prior_beta + ssq) / (2 * prior_alpha + ssq.shape[0]) for ssq in sum_sq]
+            self._stddevs = [np.sqrt(v) for v in variance]
+        else:
+            self._stddevs = [np.std(values, axis=0) for values in values_per_quantile]
         self._dist = tfd.Normal(
             loc=np.stack(self._means, axis=-1),
             scale=np.stack(self._stddevs, axis=-1)

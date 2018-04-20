@@ -12,6 +12,7 @@ import numpy as np
 from libspn import conf
 from libspn.ops import ops
 from libspn.utils.serialization import register_serializable
+import collections
 
 
 class ValueType:
