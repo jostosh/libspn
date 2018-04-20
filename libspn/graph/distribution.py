@@ -205,9 +205,9 @@ class GaussianQuantile(DistributionNode):
 
     def _compute_value(self):
         self._assert_built()
-        evidence_probs = tf.reshape(
+        probs = tf.reshape(
             self._dist.prob(self._tile_feed()), (-1, self._compute_out_size()))
-        return tf.where(self._tile_evidence(), evidence_probs, tf.ones_like(evidence_probs))
+        return tf.where(self._tile_evidence(), probs, tf.ones_like(probs))
 
     def _compute_log_value(self):
         self._assert_built()
