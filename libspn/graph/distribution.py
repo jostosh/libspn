@@ -205,15 +205,15 @@ class GaussianQuantile(DistributionNode):
 
     def _compute_value(self):
         self._assert_built()
-        probs = tf.reshape(
+        px = tf.reshape(
             self._dist.prob(self._tile_feed()), (-1, self._compute_out_size()))
-        return tf.where(self._tile_evidence(), probs, tf.ones_like(probs))
+        return tf.where(self._tile_evidence(), px, tf.ones_like(px))
 
     def _compute_log_value(self):
         self._assert_built()
-        evidence_probs = tf.reshape(
+        log_px = tf.reshape(
             self._dist.log_prob(self._tile_feed()), (-1, self._compute_out_size()))
-        return tf.where(self._tile_evidence(), evidence_probs, tf.zeros_like(evidence_probs))
+        return tf.where(self._tile_evidence(), log_px, tf.zeros_like(log_px))
 
     def _compute_scope(self):
         return [Scope(self, i) for i in range(self._num_vars) for _ in range(self._num_components)]
