@@ -31,10 +31,9 @@ from libspn.graph.serialization import deserialize_graph
 from libspn.graph.saver import Saver, JSONSaver
 from libspn.graph.loader import Loader, JSONLoader
 from libspn.graph.algorithms import compute_graph_up
-from libspn.graph.algorithms import compute_graph_up_dynamic
 from libspn.graph.algorithms import compute_graph_up_down
-from libspn.graph.algorithms import compute_graph_up_down_dynamic
 from libspn.graph.algorithms import traverse_graph
+from libspn.graph.distribution import GaussianLeaf
 
 # Generators
 from libspn.generation.dense import DenseSPNGenerator
@@ -108,8 +107,9 @@ from libspn.exceptions import StructureError
 __all__ = [
     # Graph
     'Scope', 'Input', 'Node', 'ParamNode', 'OpNode', 'VarNode',
-    'DynamicVarNode', 'DynamicInterface',
     'Concat', 'IVs', 'DynamicIVs', 'ContVars', 'DynamicContVars', 'Sum', 'Product',
+    'DynamicVarNode', 'DynamicInterface',
+    'GaussianLeaf',
     'Weights', 'assign_weights', 'initialize_weights',
     'serialize_graph', 'deserialize_graph',
     'Saver', 'Loader', 'JSONSaver', 'JSONLoader',
