@@ -6,7 +6,7 @@
 # ------------------------------------------------------------------------
 import tensorflow as tf
 from libspn.graph.scope import Scope
-from libspn.graph.node import VarNode, DynamicVarNode
+from libspn.graph.node import VarNode
 from libspn import conf, ContVars
 from libspn import utils
 import numpy as np
@@ -183,14 +183,22 @@ class GaussianLeaf(VarNode):
         """Size of output """
         return self._num_vars * self._num_components
 
-    def _tile_feed(self):
-        """Tiles feed along number of components """
-        feed_tensor = self._feed._as_graph_element() if self._external_feed else self._feed
-        return tf.tile(tf.expand_dims(feed_tensor, -1), [1, 1, self._num_components])
+    def _get_feed(self, step=None):
+        feed = self._feed._as_graph_element() if self._external_feed else self._feed
+        return self._maybe_unstack(feed, step)
 
-    def _tile_evidence(self):
-        """Tiles evidence mask along number of components """
-        return tf.tile(self.evidence, [1, self._num_components])
+    def _get_evidence(self, step=None):
+        evidence = self._feed.evidence if self._external_feed else self.evidence
+        return self._maybe_unstack(evidence, step)
+
+    def _maybe_unstack(self, tensor, step):
+        if self._dynamic:
+            if step is None:
+                raise ValueError("{}: dynamic node that should be given a step when computing "
+                                 "value. Make sure to turn on dynamic flag elsewhere.")
+            tensor_array = tf.TensorArray(dtype=tensor.dtype, size=self._max_steps).unstack(tensor)
+            tensor = tensor_array.read(step)
+        return tensor
 
     def _tile_num_components(self, tensor):
         if tensor.shape[-1].value != 1:
@@ -198,56 +206,22 @@ class GaussianLeaf(VarNode):
         rank = len(tensor.shape)
         return tf.tile(tensor, [1 for _ in range(rank - 1)] + [self._num_components])
 
-    def _unstacked_tensor(self, tensor, dtype=conf.dtype):
-        return tf.TensorArray(dtype=dtype, size=self._max_steps).unstack(value=tensor)
+    def _compute_value_common(self, prob_fn, no_evidence_fn, step=None):
+        feed = self._tile_num_components(self._get_feed(step=step))
+        value = prob_fn(feed)
+        evidence = self._tile_num_components(self._get_evidence(step=step))
+        return tf.reshape(
+            tf.where(evidence, value, no_evidence_fn(value)), (-1, self._compute_out_size()))
 
     def _compute_value(self, step=None):
         """Computes value in non-log space """
-        if self._dynamic:
-            if step is None:
-                raise ValueError("{}: dynamic node that should be given a step when computing "
-                                 "value. Make sure to turn on dynamic flag elsewhere.")
-            feed_array = self._unstacked_tensor(self._feed)
-            feed = feed_array.read(step)
-
-            evidence_array = self._unstacked_tensor(self._evidence_indicator, dtype=tf.bool)
-            evidence = evidence_array.read(step)
-        else:
-            feed = self._feed
-            evidence = self._evidence_indicator
-        out_shape = (-1, self._compute_out_size())
-        prob = tf.reshape(self._dist.prob(self._tile_num_components(feed)), out_shape)
-        evidence = tf.reshape(self._tile_num_components(evidence), out_shape)
-        return tf.where(evidence, prob, tf.ones_like(prob))
+        return self._compute_value_common(
+            prob_fn=self._dist.prob, no_evidence_fn=tf.ones_like, step=step)
 
     def _compute_log_value(self, step=None):
         """Computes value in log-space """
-        if self._dynamic:
-            if step is None:
-                raise ValueError("{}: dynamic node that should be given a step when computing "
-                                 "value. Make sure to turn on dynamic flag elsewhere."
-                                 .format(self.name))
-            feed_array = self._unstacked_tensor(self._feed)
-            feed = feed_array.read(step)
-
-            evidence_array = self._unstacked_tensor(self._evidence_indicator, dtype=tf.bool)
-            evidence = evidence_array.read(step)
-        else:
-            feed = self._feed
-            evidence = self._evidence_indicator
-
-        out_shape = (-1, self._compute_out_size())
-        log_prob = tf.reshape(self._dist.log_prob(self._tile_num_components(feed)), out_shape)
-        evidence = tf.reshape(self._tile_num_components(evidence), out_shape)
-        return tf.where(evidence, log_prob, tf.zeros_like(log_prob))
-
-        #
-        # dist = tfd.Normal(loc=self._mean_variable, scale=tf.sqrt(self._variance_variable))
-        # evidence_probs = tf.reshape(
-        #     dist.log_prob(self._tile_num_components(tf.expand_dims(feed, -1))),
-        #     (-1, self._compute_out_size()))
-        # return tf.where(self._tile_num_components(evidence),
-        #                 evidence_probs, tf.zeros_like(evidence_probs))
+        return self._compute_value_common(
+            prob_fn=self._dist.log_prob, no_evidence_fn=tf.zeros_like, step=step)
 
     def _compute_scope(self):
         """Computes scope """
@@ -259,8 +233,8 @@ class GaussianLeaf(VarNode):
         # MPE state can be found by taking the mean of the mixture components that are 'selected'
         # by the counts
         counts_reshaped = tf.reshape(counts, (-1, self._num_vars, self._num_components))
-        indices = tf.argmax(counts_reshaped, axis=-1) + tf.reshape(
-            tf.range(self._num_vars, dtype=tf.int64) * self._num_components, (1, self._num_vars))
+        indices = tf.argmax(counts_reshaped, axis=-1) + tf.expand_dims(
+            tf.range(self._num_vars, dtype=tf.int64) * self._num_components, axis=0)
         return tf.gather(tf.reshape(self._mean_variable, (-1,)), indices=indices, axis=0)
 
     def _compute_hard_em_update(self, counts):
@@ -269,9 +243,7 @@ class GaussianLeaf(VarNode):
         accum = tf.reduce_sum(counts_reshaped, axis=0)
 
         # Tile the feed
-        tiled_feed = tf.reshape(
-            self._tile_num_components(tf.expand_dims(self._feed, axis=-1)),
-            (-1, self._num_vars, self._num_components))
+        tiled_feed = self._tile_num_components(self._get_feed())
         sum_data = tf.reduce_sum(counts_reshaped * tiled_feed, axis=0)
         sum_data_squared = tf.reduce_sum(counts_reshaped * tf.square(tiled_feed), axis=0)
         return {'accum': accum, "sum_data": sum_data, "sum_data_squared": sum_data_squared}
@@ -290,28 +262,16 @@ class GaussianLeaf(VarNode):
             :return A tuple containing assignment operations for the new total counts, the variance
             and the mean
         """
-        total_counts = tf.maximum(self._total_count_variable + accum,
-                                  tf.ones_like(self._total_count_variable))
-        mean = (self._total_count_variable * self._mean_variable + sum_data) / total_counts
+        n = tf.maximum(self._total_count_variable, tf.ones_like(self._total_count_variable))
+        k = accum
+        mean = (n * self._mean_variable + sum_data) / (n + k)
 
-        variance = (self._total_count_variable * self._variance_variable +
+        variance = (n * self._variance_variable +
                     sum_data_squared - 2 * self.mean_variable * sum_data +
-                    accum * tf.square(self.mean_variable)) / \
-                   total_counts - tf.square(mean - self._mean_variable)
-
-        return (
-            tf.assign(self._total_count_variable, total_counts),
-            tf.assign(self._variance_variable, variance) if self._train_var else tf.no_op(),
-            tf.assign(self._mean_variable, mean) if self._train_mean else tf.no_op()
-        )
-
-    def _compute_log_mpe_value(self, step=None):
-        """Assemble TF operations computing the log MPE value of this node.
-
-        The MPE log value is equal to marginal log value for VarNodes.
-
-        Returns:
-            Tensor: A tensor of shape ``[None, out_size]``, where the first
-            dimension corresponds to the batch size.
-        """
-        return self._compute_log_value(step=step)
+                    k * tf.square(self.mean_variable)) / \
+                   (n + k) - tf.square(mean - self._mean_variable)
+        with tf.control_dependencies([n, k, mean, variance]):
+            return (
+                tf.assign_add(self._total_count_variable, k),
+                tf.assign(self._variance_variable, variance) if self._train_var else tf.no_op(),
+                tf.assign(self._mean_variable, mean) if self._train_mean else tf.no_op())
