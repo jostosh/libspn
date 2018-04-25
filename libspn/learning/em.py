@@ -39,10 +39,12 @@ class EMLearning():
         # Create internal MPE path generator
         if mpe_path is None:
             self._dynamic = True if traverse_graph(root, lambda node: node.is_dynamic) else False
+            reduce_in_loop = False if traverse_graph(
+                root, lambda node: isinstance(node, GaussianLeaf)) else True
             self._mpe_path = MPEPath(log=log,
                                      value_inference_type=value_inference_type,
                                      add_random=add_random, use_unweighted=use_unweighted,
-                                     dynamic=self._dynamic)
+                                     dynamic=self._dynamic, dynamic_reduce_in_loop=reduce_in_loop)
         else:
             self._mpe_path = mpe_path
         # Create a name scope
@@ -81,7 +83,9 @@ class EMLearning():
                     [pn.accum.initializer for pn in self._param_nodes] +
                     [dn.accum.initializer for dn in self._gaussian_leaf_nodes] +
                     [dn.sum_data.initializer for dn in self._gaussian_leaf_nodes] +
-                    [dn.sum_data_squared.initializer for dn in self._gaussian_leaf_nodes]),
+                    [dn.sum_data_squared.initializer for dn in self._gaussian_leaf_nodes] +
+                    [dn.node._total_count_variable.initializer
+                     for dn in self._gaussian_leaf_nodes]),
                             name="reset_accumulators")
 
     def accumulate_updates(self):
@@ -101,7 +105,10 @@ class EMLearning():
 
             for dn in self._gaussian_leaf_nodes:
                 with tf.name_scope(dn.name_scope):
-                    counts = self._mpe_path.counts[dn.node]
+                    if dn.node.is_dynamic:
+                        counts = self._mpe_path.counts_per_step[dn.node]
+                    else:
+                        counts = self._mpe_path.counts[dn.node]
                     update_value = dn.node._compute_hard_em_update(counts)
                     assign_ops.append(tf.assign_add(dn.accum, update_value['accum']))
                     assign_ops.append(tf.assign_add(dn.sum_data, update_value['sum_data']))
@@ -122,10 +129,7 @@ class EMLearning():
 
             for dn in self._gaussian_leaf_nodes:
                 with tf.name_scope(dn.name_scope):
-                    accum = dn.accum
-                    if self._additive_smoothing is not None:
-                        accum = tf.add(accum, self._additive_smoothing)
-                    assign_ops.extend(dn.node.assign(accum, dn.sum_data, dn.sum_data_squared))
+                    assign_ops.extend(dn.node.assign(dn.accum, dn.sum_data, dn.sum_data_squared))
 
             return tf.group(*assign_ops, name="update_spn")
 

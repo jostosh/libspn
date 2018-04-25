@@ -8,6 +8,8 @@
 import tensorflow as tf
 from types import MappingProxyType
 from abc import ABC
+
+from libspn import GaussianLeaf
 from libspn.graph.algorithms import compute_graph_up, compute_graph_up_dynamic
 from libspn.graph.node import DynamicVarNode, DynamicInterface
 from libspn.inference.type import InferenceType
@@ -126,6 +128,8 @@ class DynamicValue(BaseValue):
                     # TODO the below is not really well designed, but the temporal nodes should
                     # somehow have access to the step (and batch size in the case of a dynamic
                     # interface)
+                    if isinstance(node, GaussianLeaf) and node.is_dynamic:
+                        kwargs['step'] = step
                     if isinstance(node, DynamicVarNode):
                         kwargs['step'] = step
                     if isinstance(node, DynamicInterface):
@@ -186,6 +190,8 @@ class DynamicLogValue(BaseValue):
             def fun(node, *args):
                 with tf.name_scope(node.name):
                     kwargs = {}
+                    if isinstance(node, GaussianLeaf) and node.is_dynamic:
+                        kwargs['step'] = step
                     if isinstance(node, DynamicVarNode):
                         kwargs['step'] = step
                     if isinstance(node, DynamicInterface):

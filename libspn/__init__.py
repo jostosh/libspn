@@ -35,6 +35,7 @@ from libspn.graph.algorithms import compute_graph_up_down
 from libspn.graph.algorithms import traverse_graph
 from libspn.graph.distribution import GaussianLeaf
 
+
 # Generators
 from libspn.generation.dense import DenseSPNGenerator
 from libspn.generation.weights import WeightsGenerator

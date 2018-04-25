@@ -268,8 +268,8 @@ class TestDSPN(TestCase):
         self.assertAllClose(dynamic_out, unrolled_out)
 
     @parameterized.expand(arg_product(
-        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],
-        [False, True]))
+        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [True],
+        [False]))
     def test_mpe_path(self, log, inf_type, iv_inputs, varlen):
         sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else None
         sequence_lens_ph = tf.placeholder(tf.int32, [None]) if varlen else None
@@ -348,6 +348,8 @@ class TestDSPN(TestCase):
                 dynamic_out = sess.run(counts_per_step_dynamic, feed_dict=dynamic_feed)
                 unrolled_out = sess.run(counts_per_step_unrolled, feed_dict=unrolled_feed)
 
+        if not varlen:
+            print(unrolled_out)
         for node, do, uo in zip(dynamic_var_nodes, dynamic_out, unrolled_out):
             self.assertAllClose(do, uo)
 
