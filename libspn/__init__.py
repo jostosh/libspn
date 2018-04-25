@@ -33,6 +33,7 @@ from libspn.graph.distribution import GaussianLeaf
 
 # Generators
 from libspn.generation.dense import DenseSPNGenerator
+from libspn.generation.dense_layernodes import DenseSPNGeneratorLayerNodes
 from libspn.generation.weights import WeightsGenerator
 from libspn.generation.weights import generate_weights
 
@@ -44,6 +45,7 @@ from libspn.inference.mpe_path import MPEPath
 from libspn.inference.mpe_state import MPEState
 from libspn.learning.em import EMLearning
 from libspn.learning.gd import GDLearning
+from libspn.learning.type import LearningInferenceType, LearningType
 
 # Data
 from libspn.data.dataset import Dataset
@@ -109,11 +111,12 @@ __all__ = [
     'compute_graph_up', 'compute_graph_up_down',
     'traverse_graph',
     # Generators
-    'DenseSPNGenerator', 'WeightsGenerator',
+    'DenseSPNGenerator', 'DenseSPNGeneratorLayerNodes', 'WeightsGenerator',
     'generate_weights',
     # Inference and learning
     'InferenceType', 'Value', 'LogValue', 'MPEPath', 'MPEState',
     'EMLearning', 'GDLearning',
+    'LearningInferenceType', 'LearningType',
     # Data
     'Dataset', 'FileDataset', 'CSVFileDataset', 'GaussianMixtureDataset',
     'IntGridDataset', 'ImageFormat', 'ImageShape', 'ImageDatasetBase',

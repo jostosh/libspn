@@ -117,6 +117,11 @@ class EMLearning():
                         assign_ops.append(pn.node.assign_log(accum))
                     else:
                         assign_ops.append(pn.node.assign(accum))
+
+            for dn in self._gaussian_leaf_nodes:
+                with tf.name_scope(dn.name_scope):
+                    assign_ops.extend(dn.node.assign(dn.accum, dn.sum_data, dn.sum_data_squared))
+
             return tf.group(*assign_ops, name="update_spn")
 
     def learn(self):
@@ -127,10 +132,6 @@ class EMLearning():
         def fun(node):
             if node.is_param:
                 with tf.name_scope(node.name) as scope:
-                    if node.is_distribution:
-                        var = node.variables[0]
-                    else:
-                        var = node.variable
                     if self._initial_accum_value is not None:
                         accum = tf.Variable(tf.ones_like(node.variable,
                                                          dtype=conf.dtype) *
