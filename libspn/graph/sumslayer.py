@@ -458,9 +458,7 @@ class SumsLayer(OpNode):
         return reduction_fn(reducible_values)
 
     def _apply_weighting(self, cwise_op, reducible_values, weight_tensor):
-        print(reducible_values.shape)
         reducible_values = cwise_op(reducible_values, weight_tensor)
-        print(reducible_values.shape)
         return reducible_values
 
     def _apply_IVs(self, cwise_op, ivs_tensor, reducible_values):
@@ -680,7 +678,6 @@ class SumsLayer(OpNode):
                               add_random=None, use_unweighted=False, with_ivs=True):
         # Get weighted, IV selected values
         weighted = not use_unweighted or any(v.node.is_var for v in self._values)
-        print("UNWEIGHTED", use_unweighted)
         values_weighted = self._compute_value_common(
             tf.add, lambda x: x, weight_value, ivs_value, *value_values,
             weighted=weighted, pad_elem=-float('inf'), with_ivs=with_ivs)
