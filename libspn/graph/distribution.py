@@ -183,9 +183,9 @@ class GaussianLeaf(VarNode):
         """Size of output """
         return self._num_vars * self._num_components
 
-    def _get_feed(self, step=None):
+    def _get_feed(self, step=None, maybe_unstack=True):
         feed = self._feed._as_graph_element() if self._external_feed else self._feed
-        return self._maybe_unstack(feed, step)
+        return self._maybe_unstack(feed, step) if maybe_unstack else feed
 
     def _get_evidence(self, step=None):
         evidence = self._feed.evidence if self._external_feed else self.evidence
@@ -194,8 +194,9 @@ class GaussianLeaf(VarNode):
     def _maybe_unstack(self, tensor, step):
         if self._dynamic:
             if step is None:
-                raise ValueError("{}: dynamic node that should be given a step when computing "
-                                 "value. Make sure to turn on dynamic flag elsewhere.")
+                raise ValueError("{}: should be given a step when computing "
+                                 "value. Make sure to turn on dynamic flag elsewhere."
+                                 .format(self.name))
             tensor_array = tf.TensorArray(dtype=tensor.dtype, size=self._max_steps).unstack(tensor)
             tensor = tensor_array.read(step)
         return tensor
@@ -243,7 +244,12 @@ class GaussianLeaf(VarNode):
         accum = tf.reduce_sum(counts_reshaped, axis=0)
 
         # Tile the feed
-        tiled_feed = self._tile_num_components(self._get_feed())
+        feed = self._get_feed(maybe_unstack=False)
+        if self._dynamic:
+            tiled_feed = self._tile_num_components(tf.reshape(feed, (-1, self._num_vars)))
+        else:
+            tiled_feed = self._tile_num_components(feed)
+
         sum_data = tf.reduce_sum(counts_reshaped * tiled_feed, axis=0)
         sum_data_squared = tf.reduce_sum(counts_reshaped * tf.square(tiled_feed), axis=0)
         return {'accum': accum, "sum_data": sum_data, "sum_data_squared": sum_data_squared}
