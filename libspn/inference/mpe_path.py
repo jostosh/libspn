@@ -86,6 +86,7 @@ class MPEPath:
         """
         def down_fun(node, parent_vals):
             # Sum up all parent vals
+            parent_vals = [pv for pv in parent_vals if pv is not None]
             if len(parent_vals) > 1:
                 summed = tf.add_n(parent_vals, name=node.name + "_add")
             else:
@@ -142,6 +143,7 @@ class MPEPath:
             time0 = root.get_maxlen() - sequence_lens
 
         def reduce_parents_fun_step(t, node, parent_vals):
+            parent_vals = [pv for pv in parent_vals if pv is not None]
             # Sum up all parent vals
             def accumulate():
                 if len(parent_vals) > 1:
