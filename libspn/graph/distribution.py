@@ -254,6 +254,10 @@ class GaussianLeaf(VarNode):
         sum_data_squared = tf.reduce_sum(counts_reshaped * tf.square(tiled_feed), axis=0)
         return {'accum': accum, "sum_data": sum_data, "sum_data_squared": sum_data_squared}
 
+    def _compute_log_mpe_value(self, step=None):
+        """Compute log mpe value """
+        return self._compute_log_value(step=step)
+
     def assign(self, accum, sum_data, sum_data_squared):
         """
         Assigns new values to variables based on accumulated tensors. It updates the distribution
