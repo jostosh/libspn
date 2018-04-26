@@ -49,11 +49,10 @@ class TestGaussianQuantile(TestCase):
         self.assertAllClose(gq._variance_init, true_vars)
         self.assertAllClose(gq._mean_init, true_means)
 
-
     def test_learn_from_data_prior(self):
         prior_beta = 3.0
         prior_alpha = 2.0
-        N = 32
+        N = 64
         quantiles = [np.random.rand(N, 32) + i * 2 for i in range(4)]
         data = np.concatenate(quantiles, axis=0)
         np.random.shuffle(data)
@@ -66,8 +65,6 @@ class TestGaussianQuantile(TestCase):
         true_vars = (2 * prior_beta + ssq) / (2 * prior_alpha + 2 + N)
 
         self.assertAllClose(gq._variance_init, true_vars)
-
-
 
     def test_sum_update_1(self):
         child1 = spn.GaussianLeaf(num_vars=1, num_components=1, total_counts_init=3,

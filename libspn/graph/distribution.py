@@ -92,7 +92,8 @@ class GaussianLeaf(VarNode):
         self._mean_variable = tf.Variable(
             self._mean_init, dtype=conf.dtype, collections=['spn_distribution_parameters'])
         self._variance_variable = tf.Variable(
-            self._variance_init, dtype=conf.dtype, collections=['spn_distribution_parameters'])
+            tf.maximum(self._variance_init, tf.square(self._min_stddev)),
+            dtype=conf.dtype, collections=['spn_distribution_parameters'])
         self._evidence_indicator = self._create_evidence_indicator()
         self._dist = tfd.Normal(
             self._mean_variable, tf.maximum(tf.sqrt(self._variance_variable), self._min_stddev))
@@ -112,10 +113,10 @@ class GaussianLeaf(VarNode):
         means = [np.mean(values, axis=0) for values in values_per_quantile]
 
         if use_prior:
-            sum_sq = [np.sum((x - np.expand_dims(mu, 0)) ** 2, axis=0)
+            sum_sq = [np.sum((x - mu) ** 2, axis=0)
                       for x, mu in zip(values_per_quantile, means)]
-            variance = [(2 * prior_beta + ssq) / (2 * prior_alpha + 2 + ssq.shape[0])
-                        for ssq in sum_sq]
+            variance = [(2 * prior_beta + ssq) / (2 * prior_alpha + 2 + len(v))
+                        for ssq, v in zip(sum_sq, values_per_quantile)]
         else:
             variance = [np.var(values, axis=0) for values in values_per_quantile]
 
@@ -281,6 +282,7 @@ class GaussianLeaf(VarNode):
                     sum_data_squared - 2 * self.mean_variable * sum_data +
                     k * tf.square(self.mean_variable)) / \
                    (n + k) - tf.square(mean - self._mean_variable)
+        variance = tf.maximum(variance, tf.square(self._min_stddev))
         with tf.control_dependencies([n, k, mean, variance]):
             return (
                 tf.assign_add(self._total_count_variable, k),
