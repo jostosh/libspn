@@ -37,6 +37,37 @@ class TestGaussianQuantile(TestCase):
             [self.assertEqual(scope[b], scope[b+i]) for i in range(1, 4)]
             [self.assertNotEqual(scope[b], scope[b + i]) for i in range(4, len(scope) - b, 4)]
 
+    def test_learn_from_data(self):
+        quantiles = [np.random.rand(32, 32) + i * 2 for i in range(4)]
+        data = np.concatenate(quantiles, axis=0)
+        np.random.shuffle(data)
+        gq = spn.GaussianLeaf(
+            num_vars=32, num_components=4, learn_dist_params=False, data=data)
+        true_vars = np.stack([np.var(q, axis=0) for q in quantiles], axis=-1)
+        true_means = np.stack([np.mean(q, axis=0) for q in quantiles], axis=-1)
+
+        self.assertAllClose(gq._variance_init, true_vars)
+        self.assertAllClose(gq._mean_init, true_means)
+
+    def test_learn_from_data_prior(self):
+        prior_beta = 3.0
+        prior_alpha = 2.0
+        N = 32
+        quantiles = [np.random.rand(N, 32) + i * 2 for i in range(4)]
+        data = np.concatenate(quantiles, axis=0)
+        np.random.shuffle(data)
+        gq = spn.GaussianLeaf(
+            num_vars=32, num_components=4, learn_dist_params=False, data=data,
+            prior_alpha=prior_alpha, prior_beta=prior_beta, use_prior=True)
+
+        mus = [np.mean(q, axis=0, keepdims=True) for q in quantiles]
+        ssq = np.stack([np.sum((x - mu) ** 2, axis=0) for x, mu in zip(quantiles, mus)], axis=-1)
+        true_vars = (2 * prior_beta + ssq) / (2 * prior_alpha + 2 + N)
+
+        self.assertAllClose(gq._variance_init, true_vars)
+
+
+
     def test_sum_update_1(self):
         child1 = spn.GaussianLeaf(num_vars=1, num_components=1, total_counts_init=3,
                                   mean_init=0.0, variance_init=1.0, learn_dist_params=True)
@@ -224,7 +255,13 @@ class TestGaussianQuantile(TestCase):
         with self.test_session() as sess:
             sess.run(init_weights)
             sess.run(reset_accumulators)
-            sess.run(accumulate_updates, fd)
+            # all_ops = sess.graph.get_operations()
+            data_per_component_op = sess.graph.get_tensor_by_name("DataPerComponent:0")
+            squared_data_per_component_op = sess.graph.get_tensor_by_name(
+                "SquaredDataPerComponent:0")
+            update_vals, data_per_component_out, squared_data_per_component_out = sess.run(
+                [accumulate_updates, data_per_component_op, squared_data_per_component_op], fd)
+
             lh_before = sess.run(avg_train_likelihood, fd)
 
             sess.run(update_spn)
@@ -272,11 +309,27 @@ class TestGaussianQuantile(TestCase):
             dm = mean - gq._mean_init.ravel()[i]
             var = (n * gq._variance_init.ravel()[i] + dx.dot(dx)) / (n + k) - dm * dm
 
+            # print(mean.shape)
+            # print(var.shape)
             mean_new_vals.append(mean)
             variance_new_vals.append(var)
 
         mean_new_vals = np.asarray(mean_new_vals).reshape((2, 2))
         variance_new_vals = np.asarray(variance_new_vals).reshape((2, 2))
+
+        def assert_non_zero_at_equal(arr, i, j, truth):
+            arr = arr[:, i, j]
+            self.assertAllClose(arr[arr != 0.0], truth)
+
+        assert_non_zero_at_equal(data_per_component_out, 0, 0, data00)
+        assert_non_zero_at_equal(data_per_component_out, 0, 1, data01)
+        assert_non_zero_at_equal(data_per_component_out, 1, 0, data10)
+        assert_non_zero_at_equal(data_per_component_out, 1, 1, data11)
+
+        assert_non_zero_at_equal(squared_data_per_component_out, 0, 0, np.square(data00))
+        assert_non_zero_at_equal(squared_data_per_component_out, 0, 1, np.square(data01))
+        assert_non_zero_at_equal(squared_data_per_component_out, 1, 0, np.square(data10))
+        assert_non_zero_at_equal(squared_data_per_component_out, 1, 1, np.square(data11))
 
         self.assertAllClose(mean_new_vals, mean_graph)
         self.assertAllClose(variance_new_vals, variance_graph, atol=1e-4, rtol=1e-4)
