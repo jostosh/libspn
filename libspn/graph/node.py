@@ -619,12 +619,12 @@ class DynamicInterface(Node):
 
     def set_source(self, source):
         source.set_receiver(self)
-        self._source_scope = source.get_scope()
         self._source = source
 
     def _compute_scope(self, *input_scopes):
-        return [Scope.merge_scopes([Scope(node, "{}, t - 1".format(var_id)) for node, var_id in scope])
-                for scope in self._source_scope]
+        return [Scope.merge_scopes([Scope(node, "{}, t - 1".format(var_id))
+                                    for node, var_id in scope])
+                for scope in self._source.get_scope()]
 
     def serialize(self):
         pass
