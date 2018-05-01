@@ -78,12 +78,15 @@ def get_dspn(max_steps=MAX_STEPS, iv_inputs=True):
     mix_int1.set_weights(mixture_in1_w)
 
     # Define template heads
-    prod0 = spn.Product(mix_x0, mix_y0, mix_z0, mix_int0, name="prod0")
-    prod1 = spn.Product(mix_x1, mix_y1, mix_z1, mix_int1, name="prod1")
+    prod0 = spn.Product(mix_x0, mix_y0, mix_z0, name="prod0")
+    prod1 = spn.Product(mix_x1, mix_y1, mix_z1, name="prod1")
 
     # Register sources for interface nodes
     intf0.set_source(prod0)
     intf1.set_source(prod1)
+
+    prod0.add_values(mix_int0)
+    prod1.add_values(mix_int1)
 
     # Define top network
     top_weights = spn.Weights(num_weights=2, name="top_w")
@@ -215,6 +218,8 @@ class TestDSPN(TestCase):
 
         dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn(iv_inputs=iv_inputs)
         init_dynamic = spn.initialize_weights(dynamic_root)
+
+        self.assertTrue(dynamic_root.is_valid())
 
         if varlen:
             unrolled_root_all, var_nodes_all, unrolled_weights_all = [], [], []

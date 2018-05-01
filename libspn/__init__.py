@@ -108,8 +108,7 @@ from libspn.exceptions import StructureError
 __all__ = [
     # Graph
     'Scope', 'Input', 'Node', 'ParamNode', 'OpNode', 'VarNode',
-    'DynamicVarNode', 'DynamicInterface',
-    'Concat', 'IVs', 'DynamicIVs', 'ContVars', 'DynamicContVars', 'Sum', 'Product',
+    'DynamicVarNode', 'Concat', 'IVs', 'DynamicIVs', 'ContVars', 'DynamicContVars', 'Sum', 'Product',
     'Weights', 'assign_weights', 'initialize_weights',
     'serialize_graph', 'deserialize_graph',
     'Saver', 'Loader', 'JSONSaver', 'JSONLoader',

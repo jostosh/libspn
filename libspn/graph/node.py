@@ -8,10 +8,10 @@
 from abc import ABC, abstractmethod, abstractproperty
 import tensorflow as tf
 from libspn import utils
+from libspn.graph.scope import Scope
 from libspn.inference.type import InferenceType
 from libspn.exceptions import StructureError
 from libspn.graph.algorithms import compute_graph_up, traverse_graph
-from libspn import conf
 
 
 class GraphData():
@@ -619,10 +619,12 @@ class DynamicInterface(Node):
 
     def set_source(self, source):
         source.set_receiver(self)
+        self._source_scope = source.get_scope()
         self._source = source
 
     def _compute_scope(self, *input_scopes):
-        return self._source._compute_scope(*input_scopes)
+        return [Scope.merge_scopes([Scope(node, "{}, t - 1".format(var_id)) for node, var_id in scope])
+                for scope in self._source_scope]
 
     def serialize(self):
         pass
@@ -650,7 +652,7 @@ class DynamicInterface(Node):
         return input_tensors[0]
 
     def _compute_valid(self, *input_scopes):
-        return self._source._compute_valid(*input_scopes)
+        return self._compute_scope(*input_scopes)
 
     def _compute_mpe_value(self, *input_tensors, step=None, batch_size=None):
         return self._compute_dynamic_common(*input_tensors, step=step, log=False,
