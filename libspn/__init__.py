@@ -18,6 +18,7 @@ from libspn.graph.ivs import IVs
 from libspn.graph.contvars import ContVars
 from libspn.graph.concat import Concat
 from libspn.graph.sum import Sum
+from libspn.graph.parsums import ParSums
 from libspn.graph.product import Product
 from libspn.graph.weights import Weights
 from libspn.graph.weights import assign_weights
