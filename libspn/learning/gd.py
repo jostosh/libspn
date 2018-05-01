@@ -125,14 +125,20 @@ class GDLearning():
                         counts = self._mpe_path.counts[pn.node]
                         actual_counts = self._mpe_path.actual_counts[pn.node] if \
                             self._learning_type == LearningType.DISCRIMINATIVE else None
-                        if self._log:  # Convert log gradients to non-log gradients
-                            counts = tf.exp(counts)
-                            if self._learning_type == LearningType.DISCRIMINATIVE:
-                                actual_counts = tf.exp(actual_counts)
-                        update_value = pn.node._compute_hard_gd_update(counts,
-                                                                       actual_counts)
-                        if not self._log:  # Δw_i = Δc_i / w_i
+                        # TODO converting to non-log, in case of log? These are just counts, so
+                        # what does that really mean?
+                        # if self._log:  # Convert log gradients to non-log gradients
+                        #     counts = tf.exp(counts)
+                        #     if self._learning_type == LearningType.DISCRIMINATIVE:
+                        #         actual_counts = tf.exp(actual_counts)
+                        update_value = pn.node._compute_hard_gd_update(
+                            counts, actual_counts)
+
+                        # TODO this should not depend on whether the value is computed in log space
+                        # or should it? It just depends on whether the *variable* is in log space
+                        if not pn.node.log:  # Δw_i = Δc_i / w_i TODO: used to be 'not self._log'
                             update_value = tf.truediv(update_value, pn.node.variable)
+
                         # Apply learning-rate
                         update_value *= self._learning_rate
                         op = tf.assign_add(pn.accum, update_value)
@@ -154,14 +160,18 @@ class GDLearning():
             for pn in self._param_nodes:
                 with tf.name_scope(pn.name_scope):
                     if self._learning_inference_type == LearningInferenceType.HARD:
-                        accum = tf.subtract(pn.accum, tf.reduce_min(pn.accum,
-                                            axis=-1, keep_dims=True))
-                        # Apply addtivie-smooting
-                        if self._additive_smoothing is not None:
-                            accum = tf.add(accum, self._additive_smoothing)
+                        if not pn.node.log:
+                            accum = tf.subtract(pn.accum, tf.reduce_min(pn.accum,
+                                                axis=-1, keep_dims=True))
+                            # Apply addtivie-smooting
+                            if self._additive_smoothing is not None:
+                                accum = tf.add(accum, self._additive_smoothing)
+                        else:
+                            accum = pn.accum
                         # Assign accumulators to respective weights
                         if pn.node.log:
-                            assign_ops.append(pn.node.assign_log(accum))
+                            print("assigning to log weights")
+                            assign_ops.append(pn.node.assign_add_log(accum))
                         else:
                             assign_ops.append(pn.node.assign(accum))
                     else:
