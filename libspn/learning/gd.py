@@ -170,7 +170,6 @@ class GDLearning():
                             accum = pn.accum
                         # Assign accumulators to respective weights
                         if pn.node.log:
-                            print("assigning to log weights")
                             assign_ops.append(pn.node.assign_add_log(accum))
                         else:
                             assign_ops.append(pn.node.assign(accum))
