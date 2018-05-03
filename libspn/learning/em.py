@@ -39,12 +39,13 @@ class EMLearning():
         # Create internal MPE path generator
         if mpe_path is None:
             self._dynamic = True if traverse_graph(root, lambda node: node.is_dynamic) else False
+            # TODO reduce_in_loop is ignored, should be fixed in dspn branch
             reduce_in_loop = False if traverse_graph(
                 root, lambda node: isinstance(node, GaussianLeaf)) else True
             self._mpe_path = MPEPath(log=log,
                                      value_inference_type=value_inference_type,
                                      add_random=add_random, use_unweighted=use_unweighted,
-                                     dynamic=self._dynamic, dynamic_reduce_in_loop=reduce_in_loop)
+                                     dynamic=self._dynamic, dynamic_reduce_in_loop=False)
         else:
             self._mpe_path = mpe_path
         # Create a name scope
