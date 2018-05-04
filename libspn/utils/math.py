@@ -207,32 +207,7 @@ def gather_cols_3d(params, indices, pad_elem=0, name=None):
                     return tf.reshape(tf.tile(params, [1, indices_rows]),
                                       (-1, indices_rows, indices_cols))
             else:
-                pad_elem = np.array(pad_elem).astype(tf.DType(params.dtype).as_numpy_dtype)
-                if param_dims == 1:
-                    axis = 0
-                    if padding:
-                        augmented = tf.concat([[tf.constant(pad_elem, dtype=params.dtype)], params],
-                                              axis=axis)
-                        gathered = tf.gather(augmented, indices=indices.ravel() + 1, axis=axis)
-                    else:
-                        gathered = tf.gather(params, indices=indices.ravel(), axis=axis)
-                    return tf.reshape(gathered, indices.shape)
-                # else:
-                axis = 1
-                if padding:
-                    augmented = tf.concat([
-                        tf.fill((tf.shape(params)[0], 1), value=tf.constant(
-                            pad_elem, dtype=params.dtype)),
-                        params
-                    ], axis=axis)
-                    gathered = tf.gather(augmented, indices=indices.ravel() + 1, axis=axis)
-                else:
-                    gathered = tf.gather(params, indices=indices.ravel(), axis=axis)
-                return tf.reshape(gathered, (-1,) + indices.shape)
-
-                # val = ops.gather_cols_3d(params, indices, padding, pad_elem)
-                # return tf.Print(val, [tf.shape(val), tf.shape(params)], message="Shapes: ",
-                #                 first_n=1)
+                return ops.gather_cols_3d(params, indices, padding, pad_elem)
 
 
 def scatter_cols(params, indices, num_out_cols, name=None):

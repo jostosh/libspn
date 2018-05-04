@@ -659,7 +659,6 @@ class DynamicInterface(Node):
             raise ValueError("Must specify a time step.")
 
         # Get the source value and return previous step if
-        print(input_tensors[0])
         return input_tensors[0]
 
     def _compute_valid(self, *input_scopes):

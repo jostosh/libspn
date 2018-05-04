@@ -124,7 +124,8 @@ class DynamicIVs(DynamicVarNode):
         name (str): Name of the node
     """
 
-    def __init__(self, max_steps, feed=None, num_vars=1, num_vals=2, name="IVs", time_major=True):
+    def __init__(self, max_steps, feed=None, num_vars=1, num_vals=2, name="DynamicIVs",
+                 time_major=True):
         if not isinstance(num_vars, int) or num_vars < 1:
             raise ValueError("num_vars must be a positive integer")
         if not isinstance(num_vals, int) or num_vals < 2:
@@ -196,7 +197,8 @@ class DynamicIVs(DynamicVarNode):
             :param **kwargs:
         """
         dense_ivs = self._compute_dense_array()
-        return dense_ivs.read(step)
+        batch_size = tf.shape(self._feed)[1 if self._time_major else 0]
+        return tf.reshape(dense_ivs.read(step), (batch_size, self.get_out_size()))
 
     def _compute_mpe_state(self, counts):
         # TODO not thought about this yet
