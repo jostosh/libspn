@@ -16,6 +16,8 @@ from random import shuffle
 from parameterized import parameterized
 import itertools
 
+from libspn.tests.test_dspn import arg_product
+
 
 def _broadcast_to_2D(test_inputs, subset_indices=None, n_stack=2):
     # Subset indices is either specified or set to [0, ..., len(inputs)-1]
@@ -185,15 +187,18 @@ class TestMath(TestCase):
                      ind_dtype=[np.int32, np.int64],
                      use_gpu=True)
 
-    def test_gather_columns_3d_padded(self):
-        def test(params_shape, indices_shape, param_dtype, ind_dtype,
-                 pad_elem=0, use_gpu=False):
+    @parameterized.expand(arg_product(
+        [(6, ), (1, 6),  (3, 6)],
+        [-float('inf'), -1.0, 0.0, 1.0, 1.23456789, float('inf'), -1, 0, 1, 12345678],
+        [(4, 5)],
+        [tf.float32, tf.float64, tf.int32, tf.int64],
+        [np.int32, np.int64],
+        [False, True])
+    )
+    def test_gather_columns_3d_padded(self, params_shape, pad_elem, indices_shape, param_dtype,
+                                      ind_dtype, use_gpu):
 
-            if use_gpu:
-                device = [False, True]
-            else:
-                device = [False]
-
+            print(params_shape, indices_shape)
             if len(params_shape) == 1:
                 params_rows = 1
                 params_cols = params_shape[0]
@@ -208,81 +213,62 @@ class TestMath(TestCase):
                 indices_rows = indices_shape[0]
                 indices_cols = indices_shape[1]
 
-            for p_dt in param_dtype:
-                for i_dt in ind_dtype:
-                    for dev in device:
-                        with self.test_session(use_gpu=dev) as sess:
+            with self.test_session(use_gpu=use_gpu) as sess:
 
-                            # Generate random params array
-                            params = np.random.randint(100, size=params_shape)
-                            # Convert params to appropriate data-types
-                            params = np.array(params, dtype=p_dt.as_numpy_dtype)
-                            # Create params tensor
-                            params_tensor = tf.constant(params, dtype=p_dt)
+                # Generate random params array
+                params = np.random.randint(100, size=params_shape)
+                # Convert params to appropriate data-types
+                params = np.array(params, dtype=param_dtype.as_numpy_dtype)
+                # Create params tensor
+                params_tensor = tf.constant(params, dtype=param_dtype)
 
-                            # Generate a list of 1D indices arrays, with random
-                            # length ranging between [1, indices-column-size)
-                            indices = []
-                            ind_length = indices_cols
-                            for i in range(indices_rows):
-                                indices.append(np.random.randint(params_cols,
-                                                                 size=ind_length,
-                                                                 dtype=i_dt))
-                                ind_length = np.random.randint(1, indices_cols)
-                            # Shuffle indices list
-                            shuffle(indices)
+                # Generate a list of 1D indices arrays, with random
+                # length ranging between [1, indices-column-size)
+                indices = []
+                ind_length = indices_cols
+                for i in range(indices_rows):
+                    indices.append(np.random.randint(params_cols,
+                                                     size=ind_length,
+                                                     dtype=ind_dtype))
+                    ind_length = np.random.randint(1, indices_cols)
+                # Shuffle indices list
+                shuffle(indices)
 
-                            # Create Ops
-                            op = spn.utils.gather_cols_3d(params_tensor, indices,
-                                                          pad_elem=pad_elem)
+                # Create Ops
+                print(indices)
+                op = spn.utils.gather_cols_3d(params_tensor, indices,
+                                              pad_elem=pad_elem)
 
-                            # Execute session
-                            output = sess.run(op)
+                # Execute session
+                output = sess.run(op)
 
-                            # Insert a column of zeros to the last column of params
-                            params_with_zero = \
-                                np.insert(params, params_cols,
-                                          np.ones(params_rows,
-                                                  dtype=p_dt.as_numpy_dtype)*pad_elem,
-                                          axis=-1)
+                # Insert a column of zeros to the last column of params
+                params_with_zero = \
+                    np.insert(params, params_cols,
+                              np.ones(params_rows,
+                                      dtype=param_dtype.as_numpy_dtype)*pad_elem,
+                              axis=-1)
 
-                            # Fill indices of padded columns with index of the
-                            # last-column of params
-                            indices = [np.insert(ind, ind.size,
-                                                 np.full((indices_cols-ind.size),
-                                                         params_cols, dtype=i_dt))
-                                       for ind in indices]
-                            # Convert list of indices to a np.array
-                            indices = np.array(indices)
+                # Fill indices of padded columns with index of the
+                # last-column of params
+                indices = [np.insert(ind, ind.size,
+                                     np.full((indices_cols-ind.size),
+                                             params_cols, dtype=ind_dtype))
+                           for ind in indices]
+                # Convert list of indices to a np.array
+                indices = np.array(indices)
 
-                            # Compute true output
-                            true_output = (params_with_zero[indices] if
-                                           len(params_with_zero.shape) == 1
-                                           else params_with_zero[:, indices])
+                # Compute true output
+                true_output = (params_with_zero[indices] if
+                               len(params_with_zero.shape) == 1
+                               else params_with_zero[:, indices])
 
-                            # Test Output values, shape and dtype
-                            np.testing.assert_array_almost_equal(output,
-                                                                 np.array(true_output))
-                            self.assertEqual(p_dt.as_numpy_dtype, output.dtype)
-                            np.testing.assert_array_equal(op.get_shape(),
-                                                          list(np.array(true_output).shape))
-
-        # List of params shapes
-        params_shapes = [(6, ),   # 1D params
-                         (1, 6),  # 2D params with single row
-                         (3, 6)]  # 2D params with multiple rows and columns
-
-        # List of padding elements
-        pad_elems = [-float('inf'), -1.0, 0.0, 1.0, 1.23456789, float('inf'),  # float
-                     -1, 0, 1, 12345678]  # int
-
-        # All combination of test cases for gather_cols_3d without padding
-        for p_shape in params_shapes:
-            for p_elem in pad_elems:
-                test(params_shape=p_shape, indices_shape=(4, 5),
-                     param_dtype=[tf.float32, tf.float64, tf.int32, tf.int64],
-                     ind_dtype=[np.int32, np.int64], pad_elem=p_elem,
-                     use_gpu=True)
+                # Test Output values, shape and dtype
+                np.testing.assert_array_almost_equal(output,
+                                                     np.array(true_output))
+                self.assertEqual(param_dtype.as_numpy_dtype, output.dtype)
+                np.testing.assert_array_equal(op.get_shape(),
+                                              list(np.array(true_output).shape))
 
     def test_scatter_cols_errors(self):
         # Should work
