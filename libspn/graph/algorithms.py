@@ -9,10 +9,7 @@
 
 from collections import deque, defaultdict
 import tensorflow as tf
-import libspn.conf as conf
-from collections import OrderedDict
-
-from libspn.exceptions import StructureError
+import libspn.conf as confs
 
 
 def compute_graph_up_dynamic(root, val_fun_step, interface_init, const_fun=None,
