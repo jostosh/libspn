@@ -243,7 +243,16 @@ class GaussianLeaf(VarNode):
         counts_reshaped = tf.reshape(counts, (-1, self._num_vars, self._num_components))
         indices = tf.argmax(counts_reshaped, axis=-1) + tf.expand_dims(
             tf.range(self._num_vars, dtype=tf.int64) * self._num_components, axis=0)
-        return tf.gather(tf.reshape(self._mean_variable, (-1,)), indices=indices, axis=0)
+        out = tf.gather(tf.reshape(self._mean_variable, (-1,)), indices=indices, axis=0)
+
+        # Check whether we have a sequence dimension in input and reshape output accordingly
+        if len(counts.shape) == 3:
+            shape_tensor = tf.shape(counts)
+            sequence_dim = shape_tensor[0]
+            batch_dim = shape_tensor[1]
+            out = tf.reshape(out, (sequence_dim, batch_dim, self._num_vars))
+
+        return out
 
     @utils.memoize
     def _compute_hard_em_update(self, counts):
