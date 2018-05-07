@@ -296,6 +296,7 @@ class ParSums(OpNode):
             return None
         return self._compute_scope(weight_scopes, ivs_scopes, *value_scopes)
 
+    @utils.memoize
     def _compute_value_common(self, weight_tensor, ivs_tensor, *value_tensors):
         """Common actions when computing value."""
         # Check inputs
@@ -309,6 +310,7 @@ class ParSums(OpNode):
         values = utils.concat_maybe(value_tensors, 1)
         return weight_tensor, ivs_tensor, values
 
+    @utils.memoize
     def _compute_value(self, weight_tensor, ivs_tensor, *value_tensors):
         weight_tensor, ivs_tensor, values = self._compute_value_common(
             weight_tensor, ivs_tensor, *value_tensors)
@@ -323,6 +325,7 @@ class ParSums(OpNode):
         else:
             return tf.matmul(values, weight_tensor, transpose_b=True)
 
+    @utils.memoize
     def _compute_log_value(self, weight_tensor, ivs_tensor, *value_tensors):
         weight_tensor, ivs_tensor, values = self._compute_value_common(
             weight_tensor, ivs_tensor, *value_tensors)
@@ -337,6 +340,7 @@ class ParSums(OpNode):
             values_weighted = tf.expand_dims(values, axis=1) + weight_tensor
         return utils.reduce_log_sum_3D(values_weighted, transpose=False)
 
+    @utils.memoize
     def _compute_mpe_value(self, weight_tensor, ivs_tensor, *value_tensors):
         weight_tensor, ivs_tensor, values = self._compute_value_common(
             weight_tensor, ivs_tensor, *value_tensors)
@@ -351,6 +355,7 @@ class ParSums(OpNode):
             values_weighted = tf.expand_dims(values, axis=1) * weight_tensor
         return tf.reduce_max(values_weighted, axis=2)
 
+    @utils.memoize
     def _compute_log_mpe_value(self, weight_tensor, ivs_tensor, *value_tensors):
         weight_tensor, ivs_tensor, values = self._compute_value_common(
             weight_tensor, ivs_tensor, *value_tensors)
@@ -365,6 +370,7 @@ class ParSums(OpNode):
             values_weighted = tf.expand_dims(values, axis=1) + weight_tensor
         return tf.reduce_max(values_weighted, axis=2)
 
+    @utils.memoize
     def _compute_mpe_path_common(self, values_weighted, counts, weight_value,
                                  ivs_value, *value_values):
         # Propagate the counts to the max value
@@ -381,6 +387,7 @@ class ParSums(OpNode):
             (max_counts_summed, ivs_value),  # IVs
             *[(t, v) for t, v in zip(max_counts_split, value_values)])  # Values
 
+    @utils.memoize
     def _compute_mpe_path(self, counts, weight_value, ivs_value, *value_values,
                           add_random=None, use_unweighted=False):
         # Get weighted, IV selected values
@@ -398,6 +405,7 @@ class ParSums(OpNode):
         return self._compute_mpe_path_common(
              values_weighted, counts, weight_value, ivs_value, *value_values)
 
+    @utils.memoize
     def _compute_log_mpe_path(self, counts, weight_value, ivs_value,
                               *value_values, add_random=None,
                               use_unweighted=False):

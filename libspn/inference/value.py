@@ -13,6 +13,7 @@ from libspn import GaussianLeaf
 from libspn.graph.algorithms import compute_graph_up, compute_graph_up_dynamic
 from libspn.graph.node import DynamicVarNode, DynamicInterface
 from libspn.inference.type import InferenceType
+from libspn import utils
 
 
 class BaseValue(ABC):
@@ -41,6 +42,7 @@ class BaseValue(ABC):
 
 class Value(BaseValue):
 
+    @utils.memoize
     def get_value(self, root):
         """Assemble a TF operation computing the values of nodes of the SPN
         rooted in ``root``.
@@ -72,6 +74,7 @@ class Value(BaseValue):
 
 class LogValue(BaseValue):
 
+    @utils.memoize
     def get_value(self, root):
         """Assemble TF operations computing the log values of nodes of the SPN
         rooted in ``root``.
@@ -104,6 +107,7 @@ class LogValue(BaseValue):
 
 class DynamicValue(BaseValue):
 
+    @utils.memoize
     def get_value(self, root, return_sequence=False, sequence_lens=None):
         """Assemble a TF operation computing the values of nodes of the SPN
         rooted in ``root``.
@@ -166,9 +170,14 @@ class DynamicValue(BaseValue):
             return top_val, top_per_step
         return top_val
 
+    @utils.memoize
+    def node_value(self, node, step):
+        return self._values[node].read(step)
+
 
 class DynamicLogValue(BaseValue):
 
+    @utils.memoize
     def get_value(self, root, return_sequence=False, sequence_lens=None):
         """Assemble a TF operation computing the values of nodes of the SPN
         rooted in ``root``.
@@ -226,3 +235,7 @@ class DynamicLogValue(BaseValue):
             # Optionally return top value per time step
             return top_val, top_per_step
         return top_val
+
+    @utils.memoize
+    def node_value(self, node, step):
+        return self._values[node].read(step)

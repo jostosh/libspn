@@ -105,6 +105,7 @@ from libspn.ops import ops
 from libspn import conf
 from libspn import utils
 from libspn.utils import ValueType
+from libspn.utils.utils import memoize
 
 # App
 from libspn.app import App
@@ -146,7 +147,7 @@ __all__ = [
     # Logging
     'config_logger', 'get_logger', 'WARNING', 'INFO', 'DEBUG1', 'DEBUG2',
     # Custom ops, utils and config
-    'ops', 'conf', 'utils', 'ValueType', 'App',
+    'ops', 'conf', 'utils', 'ValueType', 'App', 'memoize',
     # Exceptions
     'StructureError']
 

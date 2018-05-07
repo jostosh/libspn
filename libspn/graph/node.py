@@ -13,7 +13,6 @@ from libspn import utils, conf
 from libspn.inference.type import InferenceType
 from libspn.exceptions import StructureError
 from libspn.graph.algorithms import compute_graph_up, traverse_graph
-from libspn import conf
 
 
 class GraphData():
@@ -354,6 +353,7 @@ class Node(ABC):
                                  node._compute_out_size(*args)),
                                 (lambda node: node._const_out_size))
 
+    @utils.memoize
     def get_batch_size(self):
         """Traverses the graph and returns the batch size any VarNode is in it.
 
@@ -421,6 +421,7 @@ class Node(ABC):
                                         node._compute_valid(*args)))
                 is not None)
 
+    @utils.memoize
     def get_value(self, inference_type=None):
         """Assemble TF operations computing the value of the SPN rooted in
         this node.
@@ -439,6 +440,7 @@ class Node(ABC):
         from libspn.inference.value import Value
         return Value(inference_type).get_value(self)
 
+    @utils.memoize
     def get_log_value(self, inference_type=None):
         """Assemble TF operations computing the log value of the SPN rooted in
         this node.
@@ -694,6 +696,7 @@ class DynamicInterface(Node):
 
 class DynamicNode(Node, ABC):
 
+    @utils.memoize
     def get_value(self, inference_type=None, step=None):
         """Assemble TF operations computing the value of the SPN rooted in
         this node.
@@ -712,6 +715,7 @@ class DynamicNode(Node, ABC):
         from libspn.inference.value import DynamicValue
         return DynamicValue(inference_type).get_value(self)
 
+    @utils.memoize
     def get_log_value(self, inference_type=None):
         """Assemble TF operations computing the log value of the SPN rooted in
         this node.
@@ -1028,6 +1032,7 @@ class OpNode(Node):
                      else [s[index] for index in inpt.indices]
                      for (inpt, s) in zip(self.inputs, input_scopes))
 
+    @utils.memoize
     def _gather_input_tensors(self, *input_tensors):
         """For each input, gather the elements of the tensor output by the
         input node. The elements indicated by the input indices are gathered
@@ -1053,6 +1058,7 @@ class OpNode(Node):
                          for i, it in
                          zip(self.inputs, input_tensors))
 
+    @utils.memoize
     def _scatter_to_input_tensors(self, *tuples):
         """For each input, scatter the given tensor to elements indicated by
         input indices. This reverses what ``gather_input_tensors`` is doing.
@@ -1117,7 +1123,6 @@ class OpNode(Node):
             where the first dimension corresponds to the batch size and the
             second dimension is the size of the output of the input node.
         """
-
 
 
 class VarNode(Node):
@@ -1229,6 +1234,7 @@ class VarNode(Node):
             dimension corresponds to the batch size.
         """
 
+    @utils.memoize
     def _compute_log_value(self):
         """Assemble TF operations computing the marginal log value of this node.
 
@@ -1315,6 +1321,7 @@ class DynamicVarNode(Node, ABC):
         return True
 
     @property
+    @utils.memoize
     def batch_size(self):
         return tf.shape(self._feed)[1]
 
@@ -1416,6 +1423,7 @@ class DynamicVarNode(Node, ABC):
             dimension corresponds to the batch size.
         """
 
+    @utils.memoize
     def _compute_log_value(self, step):
         """Assemble TF operations computing the marginal log value of this node.
 
@@ -1549,6 +1557,7 @@ class ParamNode(Node):
             dimension corresponds to the batch size.
         """
 
+    @utils.memoize
     def _compute_log_value(self):
         """Assemble TF operations computing the marginal log value of this node.
 
@@ -1593,86 +1602,4 @@ class ParamNode(Node):
         Returns:
             Update operation.
         """
-
-
-class DistributionNode(VarNode, abc.ABC):
-
-    def __init__(self, feed=None, num_vars=1, name="DistributionLeaf"):
-        if not isinstance(num_vars, int) or num_vars < 1:
-            raise ValueError("num_vars must be a positive integer")
-        self._num_vars = num_vars
-        super().__init__(feed, name)
-
-    @property
-    def evidence(self):
-        return self._evidence_indicator
-
-    def _create_placeholder(self):
-        return tf.placeholder(conf.dtype, [None, self._num_vars])
-
-    def _create_evidence_indicator(self):
-        return tf.placeholder_with_default(
-            tf.cast(tf.ones_like(self._placeholder), tf.bool), shape=[None, self._num_vars])
-
-    def _create(self):
-        super()._create()
-        self._evidence_indicator = self._create_evidence_indicator()
-
-
-class ParameterizedDistributionNode(DistributionNode, abc.ABC):
-
-    Accumulate = namedtuple("Accumulate", ["name", "shape", "init"])
-
-    def __init__(self, accumulates=None, feed=None, num_vars=1, trainable=True,
-                 name="ParameterizedDistribution"):
-        self._variables = OrderedDict()
-        self._accumulates = accumulates
-        self._trainable = trainable
-        super().__init__(feed, num_vars, name)
-
-    @property
-    def initialize(self):
-        return tf.group(*[var.initializer for var in self._variables])
-
-    @property
-    def variables(self):
-        return self._variables
-
-    @property
-    def accumulates(self):
-        return self._accumulates
-
-    @abc.abstractmethod
-    def _compute_hard_em_update(self, counts):
-        """Compute hard EM update for all variables contained in this node. """
-
-    def _create(self):
-        super()._create()
-        self._variables = OrderedDict()
-        for name, shape, init in self._accumulates:
-            init_val = utils.broadcast_value(init, shape, dtype=conf.dtype)
-            self._variables[name] = tf.Variable(
-                init_val, dtype=conf.dtype, collections=['spn_distribution_accumulates'])
-
-    # @abc.abstractmethod
-    # def assign(self, accum, ):
-    #     """Assign new values to variables based on accum """
-        # assignment_ops = []
-        # if values and named_values:
-        #     raise ValueError(
-        #         "Cannot specify both keyword arguments for values and names for values.")
-        # if values:
-        #     if len(values) != len(self._variables):
-        #         raise StructureError(
-        #             "{}: number of assignment values does not match the number of parameters. Got "
-        #             "{}, expected {}.".format(self.name, len(values), len(self._variables)))
-        #     for var, val in zip(self._variables.values(), values):
-        #         assignment_ops.append(tf.assign(var, val))
-        # if named_values:
-        #     if len(named_values) != len(self._variables):
-        #         raise StructureError(
-        #             "{}: number of assignment values does not match the number of parameters. Got "
-        #             "{}, expected {}.".format(self.name, len(values), len(self._variables)))
-        #     for name, val in named_values.items():
-        #         assignment_ops.append(tf.assign(self._variables[name], val))
 

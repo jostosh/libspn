@@ -140,6 +140,7 @@ class GaussianLeaf(VarNode):
         super().deserialize(data)
 
     @property
+    @utils.memoize
     def batch_size(self):
         axis = 1 if self._dynamic else 0
         return tf.shape(self._feed)[axis]
@@ -193,6 +194,7 @@ class GaussianLeaf(VarNode):
         evidence = self._feed.evidence if self._external_feed else self.evidence
         return self._maybe_unstack(evidence, step)
 
+    @utils.memoize
     def _maybe_unstack(self, tensor, step):
         if self._dynamic:
             if step is None:
@@ -203,12 +205,14 @@ class GaussianLeaf(VarNode):
             tensor = tensor_array.read(step)
         return tensor
 
+    @utils.memoize
     def _tile_num_components(self, tensor):
         if tensor.shape[-1].value != 1:
             tensor = tf.expand_dims(tensor, axis=-1)
         rank = len(tensor.shape)
         return tf.tile(tensor, [1 for _ in range(rank - 1)] + [self._num_components])
 
+    @utils.memoize
     def _compute_value_common(self, prob_fn, no_evidence_fn, step=None):
         feed = self._tile_num_components(self._get_feed(step=step))
         value = prob_fn(feed)
@@ -232,6 +236,7 @@ class GaussianLeaf(VarNode):
         node = self._feed if self._external_feed else self
         return [Scope(node, i) for i in range(self._num_vars) for _ in range(self._num_components)]
 
+    @utils.memoize
     def _compute_mpe_state(self, counts):
         # MPE state can be found by taking the mean of the mixture components that are 'selected'
         # by the counts
@@ -240,6 +245,7 @@ class GaussianLeaf(VarNode):
             tf.range(self._num_vars, dtype=tf.int64) * self._num_components, axis=0)
         return tf.gather(tf.reshape(self._mean_variable, (-1,)), indices=indices, axis=0)
 
+    @utils.memoize
     def _compute_hard_em_update(self, counts):
         counts_reshaped = tf.reshape(counts, (-1, self._num_vars, self._num_components))
         # Determine accumulates per component

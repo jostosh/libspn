@@ -10,6 +10,7 @@ import tensorflow as tf
 from libspn.inference.value import Value, LogValue, DynamicValue, DynamicLogValue
 from libspn.graph.algorithms import compute_graph_up_down, compute_graph_up_down_dynamic
 import libspn.conf as conf
+from libspn import utils
 
 
 def tensor_array_factory(max_len):
@@ -144,32 +145,25 @@ class MPEPath:
 
         def reduce_parents_fun_step(t, node, parent_vals):
             parent_vals = [pv for pv in parent_vals if pv is not None]
-            # Sum up all parent vals
-            def accumulate():
-                if len(parent_vals) > 1:
-                    # tf.accumulate_n will complain about a temporary variable being defined more
-                    # than once, so use tf.add_n
-                    return tf.add_n(parent_vals, name=node.name + "_add")
 
-                return parent_vals[0]
-
+            accumulated = _maybe_accumulate(*parent_vals)
             if node.is_op:
                 if sequence_lens is not None:
                     zeros = tf.zeros_like(parent_vals[0])
                     if node.interface_head:
-                        return tf.where(tf.less_equal(t, time0), zeros, accumulate())
-                    return tf.where(tf.less(t, time0), zeros, accumulate())
+                        return tf.where(tf.less_equal(t, time0), zeros, accumulated)
+                    return tf.where(tf.less(t, time0), zeros, accumulated)
 
                 if node.interface_head:
                     # This conditional is needed for dealing with t == 0 or
                     # t <= maxlen - sequence_len.
                     # In that case, the part of the graph under the interface_head
                     # should be disabled (set to zero)
-                    return tf.cond(tf.equal(t, 0),
-                                   lambda: tf.zeros_like(parent_vals[0]), accumulate)
+                    return tf.cond(
+                        tf.equal(t, 0), lambda: tf.zeros_like(parent_vals[0]), lambda: accumulated)
 
             # Default behavior
-            return accumulate()
+            return accumulated
 
         def down_fun_time(t, node, summed):
             if node.is_op:
@@ -178,14 +172,14 @@ class MPEPath:
 
                     if self._log:
                         return node._compute_log_mpe_path(
-                            summed, *[self._value.values[i.node].read(t)
+                            summed, *[self._value.node_value(i.node, t)
                                       if i else None
                                       for i in node.inputs],
                             add_random=self._add_random,
                             use_unweighted=self._use_unweighted)
                     else:
                         return node._compute_mpe_path(
-                            summed, *[self._value.values[i.node].read(t)
+                            summed, *[self._value.node_value(i.node, t)
                                       if i else None
                                       for i in node.inputs],
                             add_random=self._add_random,
@@ -221,3 +215,13 @@ class MPEPath:
                         self._counts_per_step[node] = per_step = self._counts[node].stack()
                         self._counts[node] = tf.reduce_sum(
                             per_step, axis=0, name=node.name + "CountsTotalPerBatch")
+
+
+@utils.memoize
+def _maybe_accumulate(*values):
+    if len(values) > 1:
+        # tf.accumulate_n will complain about a temporary variable being defined more
+        # than once, so use tf.add_n
+        return tf.add_n(values)
+
+    return values[0]

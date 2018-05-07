@@ -8,6 +8,7 @@
 # Import public interface of the library
 
 from .utils import decode_bytes_array
+from .utils import memoize
 from .math import gather_cols
 from .math import gather_cols_3d
 from .math import scatter_cols
@@ -35,6 +36,7 @@ from .serialization import json_dump, json_load
 from .serialization import str2type, type2str
 from .enum import Enum
 
+
 # All
 __all__ = ['decode_bytes_array', 'scatter_cols', 'scatter_values',
            'gather_cols', 'gather_cols_3d', 'ValueType', 'broadcast_value',
@@ -48,4 +50,5 @@ __all__ = ['decode_bytes_array', 'scatter_cols', 'scatter_values',
            'register_serializable',
            'json_dumps', 'json_loads', 'json_dump', 'json_load',
            'str2type', 'type2str',
+           'memoize',
            'Enum']
