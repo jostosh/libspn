@@ -113,10 +113,6 @@ class GDLearning():
             if not self._gradient.gradients:
                 self._gradient.get_gradients(self._root)
 
-            if self._learning_type == LearningType.DISCRIMINATIVE and \
-               not self._gradient.actual_gradients:
-                self._gradient.get_actual_gradients(self._root)
-
         # Generate all accumulate operations
         with tf.name_scope(self._name_scope):
             assign_ops = []
@@ -134,14 +130,9 @@ class GDLearning():
                         assign_ops.append(op)
                     else:
                         gradients = self._gradient.gradients[pn.node]
-                        actual_gradients = self._gradient.actual_gradients[pn.node] \
-                            if self._learning_type == LearningType.DISCRIMINATIVE \
-                            else None
                         # TODO: Is there a better way to do this?
-                        update_value = \
-                            pn.node._compute_hard_gd_update(gradients, actual_gradients)
-                        # Apply learning-rate
-                        update_value *= self._learning_rate
+                        update_value = pn.node._compute_hard_gd_update(gradients,
+                                                                       None)
                         op = tf.assign_add(pn.accum, update_value)
                         assign_ops.append(op)
 
@@ -160,11 +151,9 @@ class GDLearning():
                         else:
                             assign_ops.append(pn.node.update(pn.accum))
                     else:
-                        # Add gradients to respective weights
-                        if pn.node.log:
-                            assign_ops.append(pn.node.update_log(pn.accum))
-                        else:
-                            assign_ops.append(pn.node.update(pn.accum))
+                        # Apply learning-rate
+                        accum = pn.accum * self._learning_rate
+                        assign_ops.append(pn.node.update(accum))
             return tf.group(*assign_ops, name="update_spn")
 
     def _create_accumulators(self):

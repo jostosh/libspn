@@ -200,7 +200,7 @@ class ParSums(OpNode):
             input_sizes = self.get_input_sizes()
         num_values = sum(input_sizes[2:])  # Skip ivs, weights
 
-        if isinstance(init_value, int) and init_value == 1:
+        if init_value == 1:
             init_value = utils.broadcast_value(1,
                                                (self._num_sums * num_values,),
                                                dtype=conf.dtype)
@@ -437,80 +437,3 @@ class ParSums(OpNode):
 
         return self._compute_mpe_path_common(
             values_weighted, counts, weight_value, ivs_value, *value_values)
-
-    def _compute_gradient_common(self, values_weighted, gradients, weight_value,
-                                 ivs_value, *value_values):
-        log_sum = tf.expand_dims(utils.reduce_log_sum_3D(values_weighted,
-                                                         transpose=False), axis=-1)
-        weight_gradients = \
-            tf.expand_dims(gradients, axis=-1) * tf.exp(values_weighted - log_sum)
-        # Sum up max counts between individual sum nodes
-        output_gradients = tf.reduce_sum(weight_gradients, axis=1)
-        # Split the output-gradients to value inputs
-        _, _, *value_sizes = self.get_input_sizes(None, None, *value_values)
-        output_gradients_split = tf.split(output_gradients, value_sizes, 1)
-        return self._scatter_to_input_tensors(
-            (weight_gradients, weight_value),  # Weights
-            (output_gradients, ivs_value),  # IVs
-            *[(t, v) for t, v in zip(output_gradients_split, value_values)])  # Values
-
-    def _compute_log_gradient(self, gradients, weight_value, ivs_value,
-                              *value_values, with_ivs=True):
-        # Get weighted, IV selected values
-        weight_value, ivs_value, values = self._compute_value_common(
-            weight_value, ivs_value, *value_values)
-        if self._ivs and with_ivs:
-            # IVs tensor shape = (Batch X (num_sums * num_vals))
-            # reshape it to (Batch X num_sums X num_feat)
-            reshape = (-1, self._num_sums, values.shape[1].value)
-            ivs_value = tf.reshape(ivs_value, shape=reshape)
-
-            values_weighted = tf.expand_dims(values, axis=1) + (ivs_value + weight_value)
-        else:
-            values_weighted = tf.expand_dims(values, axis=1) + weight_value
-
-        return self._compute_gradient_common(values_weighted, gradients, weight_value,
-                                             ivs_value, *value_values)
-
-    # def _compute_log_gradient_log(self, gradients, weight_value, ivs_value,
-    #                               *value_values, with_ivs=True):
-    #     # Get weighted, IV selected values
-    #     weight_value, ivs_value, values = self._compute_value_common(
-    #         weight_value, ivs_value, *value_values)
-    #     if self._ivs and with_ivs:
-    #         # IVs tensor shape = (Batch X (num_sums * num_vals))
-    #         # reshape it to (Batch X num_sums X num_feat)
-    #         reshape = (-1, self._num_sums, values.shape[1].value)
-    #         ivs_value = tf.reshape(ivs_value, shape=reshape)
-    #
-    #         values_weighted = tf.expand_dims(values, axis=1) + (ivs_value + weight_value)
-    #     else:
-    #         values_weighted = tf.expand_dims(values, axis=1) + weight_value
-    #
-    #     log_max = tf.reduce_max(values_weighted, axis=-1, keep_dims=True)
-    #     log_rebased = tf.subtract(values_weighted, log_max)
-    #     expo_logs = tf.exp(log_rebased)
-    #     summed_exponents = tf.reduce_sum(expo_logs, axis=1, keep_dims=True)
-    #
-    #     max_indices = tf.argmax(values_weighted, axis=1)
-    #     expos_excl_max = tf.one_hot(max_indices, on_value=0.0, off_value=1.0,
-    #                                 depth=values_weighted.get_shape()[1],
-    #                                 dtype=conf.dtype) * tf.truediv(expo_logs,
-    #                                                                summed_exponents)
-    #     summed_expos_excl_max = tf.reduce_sum(expos_excl_max, axis=1, keep_dims=True)
-    #     max_weight_gradient = 1.0 - summed_expos_excl_max
-    #     max_weight_gradient_scattered = \
-    #         tf.one_hot(max_indices, depth=values_weighted.get_shape()[1],
-    #                    dtype=conf.dtype) * max_weight_gradient
-    #     weight_gradients = gradients * (expos_excl_max + max_weight_gradient_scattered)
-    #
-    #     output_gradients = weight_gradients
-    #
-    #     # Split the output_gradients to value inputs
-    #     _, _, *value_sizes = self.get_input_sizes(None, None, *value_values)
-    #     output_gradients_split = utils.split_maybe(output_gradients, value_sizes, 1)
-    #
-    #     return self._scatter_to_input_tensors(
-    #         (weight_gradients, weight_value),  # Weights
-    #         (weight_gradients, ivs_value),  # IVs
-    #         *[(t, v) for t, v in zip(output_gradients_split, value_values)])  # Values
