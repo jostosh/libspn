@@ -413,7 +413,8 @@ class DenseSPNGeneratorLayerNodes:
             if node.is_op:
                 for i in node.inputs:
                     if (i and  # Input not empty
-                            not(i.is_param or i.is_var)):
+                            not(i.is_param or i.is_var or isinstance(
+                                    i.node, (SumsLayer, ProductsLayer)))):
                         parents[i.node].append(node)
                         node_to_depth[i.node] = node_to_depth[node] + 1
 
@@ -539,7 +540,7 @@ class DenseSPNGeneratorLayerNodes:
                                 if value.indices is not None:
                                     # If so, then just add the num-prods of the
                                     # layer-op as offset
-                                    indices = value.indices + layer_num_prods
+                                    indices = [ind + layer_num_prods for ind in value.indices]
                                 else:
                                     # If not, then create a list accrodingly
                                     indices = list(range(layer_num_prods,

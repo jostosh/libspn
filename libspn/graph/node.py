@@ -94,13 +94,14 @@ class Input():
             # Verify index values
             if any(not isinstance(j, int) or j < 0 for j in indices):
                 raise ValueError("Indices %s for node %s are not non-negative"
-                                 " integers" % (indices, node))
+                                 " integers" % (
+                    [(j, type(j)) for j in indices if not isinstance(j, int) or j < 0], node))
             # Check for duplicates - duplicated indices cannot be handled
             # properly during the downward pass since integrating multiple
             # parents happens only on the level of inputs, not indices.
-            if len(set(indices)) != len(indices):
-                raise ValueError("Indices %s for node %s contain duplicates"
-                                 % (indices, node))
+            # if len(set(indices)) != len(indices):
+            #     raise ValueError("Indices %s for node %s contain duplicates"
+            #                      % (indices, node))
         elif indices is not None:
             raise TypeError("Invalid indices %s for node %s" % (indices, node))
         self.indices = indices

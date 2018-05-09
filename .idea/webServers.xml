@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="988940d6-5414-456d-97b5-7c29184115e4" name="gerlach" url="http://128.208.5.109">
+        <fileTransfer host="128.208.5.109" port="24" privateKey="$USER_HOME$/.ssh/id_rsa" rootFolder="/home/jos" accessType="SFTP" keyPair="true">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" />
+          </advancedOptions>
+          <option name="port" value="24" />
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
