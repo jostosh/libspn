@@ -5,7 +5,12 @@
 # via any medium is strictly prohibited. Proprietary and confidential.
 # ------------------------------------------------------------------------
 """LibSPN tools and utilities."""
+import functools
+
 import libspn as spn
+
+
+_MEMO_INDEX = 0
 
 
 def decode_bytes_array(arr):
@@ -64,15 +69,70 @@ def _make_key(args, kwds, typed, kwd_mark=(object(),),
 
 
 def memoize(f):
-    """ Allows for memoization that can be configured with spn.conf.memoization """
-    memo = {}
+    return ArgumentCache.memoize(f)
 
-    def helper(*args, **kwargs):
-        if not spn.conf.memoization:
-            return f(*args, **kwargs)
-        key = _make_key(args, kwargs, typed=True)
-        if key not in memo:
-            memo[key] = f(*args, **kwargs)
-        return memo[key]
 
-    return helper
+class ArgumentCache:
+
+    _CACHE_HELPERS = []
+
+    @staticmethod
+    def memoize(f):
+        """ Allows for memoization that can be configured with spn.conf.memoization """
+
+        class Helper(object):
+            def __init__(self, func):
+                self._memo = {}
+                self._prev_memos = []
+                self._skip_memos = []
+                self.func = func
+
+            def __get__(self, obj, objtype=None):
+                if obj is None:
+                    return self.func
+                return functools.partial(self, obj)
+
+            def __call__(self, *args, **kwargs):
+                if not spn.conf.memoization:
+                    return f(*args, **kwargs)
+                try:
+                    key = _make_key(args, kwargs, typed=True)
+                except TypeError as e:
+                    print(e)
+                    return f(*args, **kwargs)
+                if key not in self._memo:
+                    for i, m in enumerate(self._prev_memos):
+                        if i in self._skip_memos:
+                            continue
+                        if key in m:
+                            return m[key]
+                    res = self._memo[key] = f(*args, **kwargs)
+                    return res
+
+                return self._memo[key]
+
+            def set_ignore_memos(self, memos):
+                self._skip_memos = memos
+
+            def new_memo(self):
+                self._prev_memos.append(self._memo)
+                self._memo = {}
+
+            def ignore_previous_memos(self):
+                self._skip_memos = list(range(len(self._prev_memos)))
+
+        helper = Helper(f)
+        ArgumentCache._CACHE_HELPERS.append(helper)
+        return helper
+
+    @staticmethod
+    def _increment_memos():
+        [h.new_memo() for h in ArgumentCache._CACHE_HELPERS]
+
+    @staticmethod
+    def _ignore_previous_memos():
+        [h.ignore_previous_memos() for h in ArgumentCache._CACHE_HELPERS]
+
+    @staticmethod
+    def _enable_all_memos():
+        [h.set_ignore_memos([]) for h in ArgumentCache._CACHE_HELPERS]

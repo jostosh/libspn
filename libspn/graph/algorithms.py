@@ -10,6 +10,8 @@
 from collections import deque, defaultdict
 import tensorflow as tf
 import libspn.conf as conf
+from libspn.exceptions import StructureError
+from libspn.utils.utils import ArgumentCache
 
 
 def compute_graph_up_dynamic(root, val_fun_step, interface_init, const_fun=None,
@@ -70,11 +72,14 @@ def compute_graph_up_dynamic(root, val_fun_step, interface_init, const_fun=None,
         # Dummy tensor
         top_val_init = tf.zeros(shape=shape, dtype=conf.dtype)
 
+    ArgumentCache._increment_memos()
+    ArgumentCache._ignore_previous_memos()
     step = tf.constant(0)
     _, final_val, value_arrays, top_val = tf.while_loop(
         cond=lambda i, *_: tf.less(i, max_len),
         body=compute_single_step,
         loop_vars=[step, interface_val_t0, value_arrays, top_val_init])
+    ArgumentCache._enable_all_memos()
 
     # Finally we assign the arrays to the dict
     for node, values in zip(nodes, value_arrays):
@@ -423,11 +428,17 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
         # used in the next iteration.
         for s_ind, source in enumerate(sources):
             for inp_ind, (parent_node, parent_input_nr) in enumerate(parents[source.receiver]):
+                if down_values[parent_node][parent_input_nr] is None:
+                    raise StructureError("Did not traverse through interface head, are you sure "
+                                         "you connected it to the SPN rooted at node {}?"
+                                         .format(node.name))
                 interface_sources_prev[s_ind][inp_ind] = down_values[parent_node][parent_input_nr]
 
         return t - 1, interface_sources_prev, arrays_or_reduced_output
 
     # Execute the loop, from t == max_steps - 1 through t == 0
+    ArgumentCache._increment_memos()
+    ArgumentCache._ignore_previous_memos()
     step = tf.constant(maxlen - 1)
     _, _, arrays_or_reduced_output = tf.while_loop(
         cond=lambda t, *_: tf.greater_equal(t, 0),
@@ -435,6 +446,7 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
         loop_vars=[step, interface_sources_prev, arrays_or_reduced_output],
         name="BackwardLoop"
     )
+    ArgumentCache._enable_all_memos()
 
     return {node: arr for node, arr in zip(node_order, arrays_or_reduced_output)}
 
