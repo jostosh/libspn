@@ -98,6 +98,62 @@ def get_dspn(max_steps=MAX_STEPS, iv_inputs=True):
         top_weights]
 
 
+def get_dspn_layer_nodes(max_steps=MAX_STEPS, iv_inputs=True):
+    tf.set_random_seed(1234)
+
+    weight_init_value = spn.ValueType.RANDOM_UNIFORM()
+
+    if iv_inputs:
+        ix = spn.DynamicIVs(name="iv_x", num_vars=1, num_vals=2, max_steps=max_steps)
+        iy = spn.DynamicIVs(name="iv_y", num_vars=1, num_vals=2, max_steps=max_steps)
+        iz = spn.DynamicIVs(name="iv_z", num_vars=1, num_vals=2, max_steps=max_steps)
+
+        x_in, y_in, z_in = [ix, iy, iz]
+        nw = 2
+    else:
+        ix = spn.DynamicContVars(name="iv_x", num_vars=2, max_steps=max_steps)
+        iy = spn.DynamicContVars(name="iv_y", num_vars=2, max_steps=max_steps)
+        iz = spn.DynamicContVars(name="iv_z", num_vars=2, max_steps=max_steps)
+
+        x_in = spn.Product(ix, name="ProdX")
+        y_in = spn.Product(iy, name="ProdY")
+        z_in = spn.Product(iz, name="ProdZ")
+
+        nw = 1
+
+    sum0 = spn.SumsLayer(x_in, x_in, y_in, y_in, z_in, z_in, num_or_size_sums=6)
+    sum0_weights = sum0.generate_weights(init_value=weight_init_value)
+
+    # Define interface network
+    intf0 = spn.DynamicInterface()
+    interface_mixture = spn.ParSums(intf0, num_sums=2, name="InterfaceMixture", interface_head=True)
+
+    # mixture_in0_w = spn.Weights(num_weights=2, name="mixture_in0_w", init_value=weight_init_value)
+    # mix_int0 = spn.Sum(intf0, intf1, name="mixture_intf0", interface_head=True)
+    # mix_int0.set_weights(mixture_in0_w)
+    #
+    # mixture_in1_w = spn.Weights(num_weights=2, name="mixture_in1_w", init_value=weight_init_value)
+    # mix_int1 = spn.Sum(intf0, intf1, name="mixture_intf1", interface_head=True)
+    # mix_int1.set_weights(mixture_in1_w)
+
+    # Define template heads
+    prod0 = spn.ProductsLayer((interface_mixture, [0]), (sum0, [0, 2, 4]),
+                              (interface_mixture, [1]), (sum0, [1, 3, 5]),
+                              num_or_size_prods=2)
+
+    # Register sources for interface nodes
+    intf0.set_source(prod0)
+    intf_mixture_weights = interface_mixture.generate_weights(init_value=weight_init_value)
+
+    # Define top network
+    top_weights = spn.Weights(num_weights=2, name="top_w")
+    top_net = spn.Sum(prod0, name="top")
+    top_net.set_weights(top_weights)
+
+    return top_net, [ix, iy, iz], [
+        sum0_weights, intf_mixture_weights, top_weights]
+
+
 def get_dspn_unrolled(max_steps=MAX_STEPS, iv_inputs=True):
     template_network = dspn.TemplateNetwork()
 
@@ -243,7 +299,7 @@ class TestDSPN(TestCase):
 
         if not log:
             dval = spn.DynamicValue(inf_type).get_value(
-                dynamic_root, sequence_lens=sequence_lens)
+                dynamic_root, sequence_lens=sequence_lens_ph)
             if varlen:
                 uval = tf.concat(
                     [spn.Value(inf_type).get_value(root) for root in unrolled_root_all], axis=0)
@@ -251,7 +307,7 @@ class TestDSPN(TestCase):
                 uval = spn.Value(inf_type).get_value(unrolled_root)
         else:
             dval = spn.DynamicLogValue(inf_type).get_value(
-                dynamic_root, sequence_lens=sequence_lens)
+                dynamic_root, sequence_lens=sequence_lens_ph)
             if varlen:
                 uval = tf.concat(
                     [spn.LogValue(inf_type).get_value(root) for root in unrolled_root_all], axis=0)
@@ -268,8 +324,8 @@ class TestDSPN(TestCase):
         self.assertAllClose(dynamic_out, unrolled_out)
 
     @parameterized.expand(arg_product(
-        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [True],
-        [False]))
+        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [True, False],
+        [False, True]))
     def test_mpe_path(self, log, inf_type, iv_inputs, varlen):
         sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else None
         sequence_lens_ph = tf.placeholder(tf.int32, [None]) if varlen else None
@@ -461,13 +517,30 @@ class TestDSPN(TestCase):
             self.assertAllClose(np.squeeze(do), np.squeeze(uo))
 
     @parameterized.expand(arg_product(
-        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True]))
-    def test_training(self, log, inf_type, iv_inputs):
+        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],
+        [False, True]))
+    def test_training(self, log, inf_type, iv_inputs, layer_nodes):
         unrolled_root, var_nodes, unrolled_weights = get_dspn_unrolled(iv_inputs=iv_inputs)
-        dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn(iv_inputs=iv_inputs)
+        if layer_nodes:
+            dynamic_root, dynamic_var_nodes, (sum_weights, mixture_weights, top_weights) = \
+                get_dspn_layer_nodes(iv_inputs=iv_inputs)
+            # [print(w.variable.shape) for w in unrolled_weights[:6]]
+            sum_weights_unrolled = tf.concat([w.variable for w in unrolled_weights[:6]],
+                                             axis=0)
+            mixture_weights_unrolled = tf.concat([w.variable for w in unrolled_weights[6:-1]],
+                                                 axis=0)
+            top_weights_unrolled = unrolled_weights[-1].variable
+            copy_weights = tf.group(
+                tf.assign(sum_weights.variable, sum_weights_unrolled),
+                tf.assign(mixture_weights.variable, mixture_weights_unrolled),
+                tf.assign(top_weights.variable, top_weights_unrolled))
+            dynamic_weights = [sum_weights.variable, mixture_weights.variable, top_weights.variable]
+            unrolled_weights = [sum_weights_unrolled, mixture_weights_unrolled, top_weights_unrolled]
+        else:
+            dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn(iv_inputs=iv_inputs)
 
-        copy_weights = tf.group(*[tf.assign(dw.variable, uw.variable) for dw, uw in
-                                  zip(dynamic_weights, unrolled_weights)])
+            copy_weights = tf.group(*[tf.assign(dw.variable, uw.variable) for dw, uw in
+                                      zip(dynamic_weights, unrolled_weights)])
 
         unrolled_feed, dynamic_feed = get_feed_dicts(var_nodes, dynamic_var_nodes,
                                                      iv_inputs)
@@ -505,8 +578,12 @@ class TestDSPN(TestCase):
                                                  feed_dict=unrolled_feed)
                 sess.run(update_spn_unr)
 
-                unrolled_weights_val = sess.run([w.variable for w in unrolled_weights])
-                dynamic_weights_val = sess.run([w.variable for w in dynamic_weights])
+                if not layer_nodes:
+                    unrolled_weights_val = sess.run([w.variable for w in unrolled_weights])
+                    dynamic_weights_val = sess.run([w.variable for w in dynamic_weights])
+                else:
+                    unrolled_weights_val = sess.run(unrolled_weights)
+                    dynamic_weights_val = sess.run(dynamic_weights)
 
                 sess.run([reset_acc_dyn, reset_acc_unr])
                 self.assertAllClose(likelihood_dyn_val, likelihood_unr_val)
