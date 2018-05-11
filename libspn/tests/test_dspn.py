@@ -81,6 +81,9 @@ def get_dspn(max_steps=MAX_STEPS, iv_inputs=True):
     prod0 = spn.Product(mix_x0, mix_y0, mix_z0, name="prod0")
     prod1 = spn.Product(mix_x1, mix_y1, mix_z1, name="prod1")
 
+    intf0._set_scope(prod0.get_scope())
+    intf1._set_scope(prod1.get_scope())
+
     # Register sources for interface nodes
     intf0.set_source(prod0)
     intf1.set_source(prod1)
@@ -208,6 +211,22 @@ def get_feed_dicts(var_nodes, dynamic_var_nodes, iv_inputs, varlen=False):
 
 
 class TestDSPN(TestCase):
+
+    def test_scope(self):
+        dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn()
+
+        intf_head0 = dynamic_root.values[0].node.values[-1].node
+
+        self.assertTrue(dynamic_root.is_valid())
+        target_scope = spn.Scope.merge_scopes([
+            spn.Scope(node, "0[t-1]") for node in dynamic_var_nodes
+        ])
+        self.assertEqual(target_scope, intf_head0.get_scope()[0])
+        target_scope = spn.Scope.merge_scopes([target_scope] + [
+            spn.Scope(node, 0) for node in dynamic_var_nodes
+        ])
+
+        self.assertEqual(target_scope, dynamic_root.get_scope()[0])
 
     @parameterized.expand(arg_product(
         [False, True], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],

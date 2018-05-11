@@ -394,6 +394,7 @@ class Node(ABC):
             list of Scope: A list of length ``out_size`` containing scopes of
                            each output of this node.
         """
+
         return compute_graph_up(self, (lambda node, *args:
                                        node._compute_scope(*args)))
 
@@ -608,6 +609,7 @@ class DynamicInterface(Node):
         super(DynamicInterface, self).__init__(inference_type=inference_type, name=name)
         self._source = None
         self._interface_head = interface_head
+        self._scope = None
 
     @property
     def has_source(self):
@@ -622,9 +624,7 @@ class DynamicInterface(Node):
         self._source = source
 
     def _compute_scope(self, *input_scopes):
-        return [Scope.merge_scopes([Scope(node, "{}, t - 1".format(var_id))
-                                    for node, var_id in scope])
-                for scope in self._source.get_scope()]
+        return self._scope
 
     def serialize(self):
         pass
@@ -638,6 +638,13 @@ class DynamicInterface(Node):
     @property
     def _const_out_size(self):
         pass
+
+    def _set_scope(self, source_scope):
+        # TODO this is only temporary. Need to redesign scope checking. Would greatly benefit from
+        # knowing the 'operations' an 'Input' is involved in!
+        self._scope = [Scope.merge_scopes(
+            [Scope(node, "{}[t-1]".format(var_id)) for node, var_id in scope])
+            for scope in source_scope]
 
     def _compute_dynamic_common(self, *input_tensors, step=None, log=False, batch_size=None):
 
