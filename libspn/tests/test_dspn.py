@@ -78,12 +78,18 @@ def get_dspn(max_steps=MAX_STEPS, iv_inputs=True):
     mix_int1.set_weights(mixture_in1_w)
 
     # Define template heads
-    prod0 = spn.Product(mix_x0, mix_y0, mix_z0, mix_int0, name="prod0")
-    prod1 = spn.Product(mix_x1, mix_y1, mix_z1, mix_int1, name="prod1")
+    prod0 = spn.Product(mix_x0, mix_y0, mix_z0, name="prod0")
+    prod1 = spn.Product(mix_x1, mix_y1, mix_z1, name="prod1")
+
+    intf0._set_scope(prod0.get_scope())
+    intf1._set_scope(prod1.get_scope())
 
     # Register sources for interface nodes
     intf0.set_source(prod0)
     intf1.set_source(prod1)
+
+    prod0.add_values(mix_int0)
+    prod1.add_values(mix_int1)
 
     # Define top network
     top_weights = spn.Weights(num_weights=2, name="top_w")
@@ -137,6 +143,9 @@ def get_dspn_layer_nodes(max_steps=MAX_STEPS, iv_inputs=True):
     # mix_int1.set_weights(mixture_in1_w)
 
     # Define template heads
+    prod0 = spn.ProductsLayer((sum0, [0, 2, 4]), (sum0, [1, 3, 5]), num_or_size_prods=2)
+
+    intf0._set_scope(prod0.get_scope())
     prod0 = spn.ProductsLayer((interface_mixture, [0]), (sum0, [0, 2, 4]),
                               (interface_mixture, [1]), (sum0, [1, 3, 5]),
                               num_or_size_prods=2)
@@ -262,6 +271,26 @@ def get_feed_dicts(var_nodes, dynamic_var_nodes, iv_inputs, varlen=False):
 
 class TestDSPN(TestCase):
 
+    @parameterized.expand(arg_product([False, True]))
+    def test_scope(self, layer_nodes):
+        if layer_nodes:
+            dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn_layer_nodes()
+        else:
+            dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn()
+
+        intf_head0 = dynamic_root.values[0].node.values[-1 if not layer_nodes else 0].node
+
+        self.assertTrue(dynamic_root.is_valid())
+        target_scope = spn.Scope.merge_scopes([
+            spn.Scope(node, "0[t-1]") for node in dynamic_var_nodes
+        ])
+        self.assertEqual(target_scope, intf_head0.get_scope()[0])
+        target_scope = spn.Scope.merge_scopes([target_scope] + [
+            spn.Scope(node, 0) for node in dynamic_var_nodes
+        ])
+
+        self.assertEqual(target_scope, dynamic_root.get_scope()[0])
+
     @parameterized.expand(arg_product(
         [False, True], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],
         [False, True]))
@@ -271,6 +300,8 @@ class TestDSPN(TestCase):
 
         dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn(iv_inputs=iv_inputs)
         init_dynamic = spn.initialize_weights(dynamic_root)
+
+        self.assertTrue(dynamic_root.is_valid())
 
         if varlen:
             unrolled_root_all, var_nodes_all, unrolled_weights_all = [], [], []

@@ -37,7 +37,9 @@ from libspn.graph.serialization import deserialize_graph
 from libspn.graph.saver import Saver, JSONSaver
 from libspn.graph.loader import Loader, JSONLoader
 from libspn.graph.algorithms import compute_graph_up
+from libspn.graph.algorithms import compute_graph_up_dynamic
 from libspn.graph.algorithms import compute_graph_up_down
+from libspn.graph.algorithms import compute_graph_up_down_dynamic
 from libspn.graph.algorithms import traverse_graph
 from libspn.graph.distribution import GaussianLeaf
 
