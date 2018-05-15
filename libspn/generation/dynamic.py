@@ -139,9 +139,10 @@ class DynamicSPNComponent:
                 if not isinstance(inp_node, TemplateNetwork.TemplateNode):
                     raise TypeError("Input should also be a TemplateNode")
 
-                # Validate that the input node is already part of the TemplateNetwork
-                if inp_node.name not in self._nodes:
-                    raise StructureError("Input should already be added to the TemplateNetwork")
+                if isinstance(self, TemplateNetwork):
+                    # Validate that the input node is already part of the TemplateNetwork
+                    if inp_node.name not in self._nodes:
+                        raise StructureError("Input should already be added to the TemplateNetwork")
 
         # Create a new TemplateNode
         node = self._nodes[name] = TemplateNetwork.TemplateNode(
