@@ -230,6 +230,7 @@ class GaussianLeaf(VarNode):
         return self._compute_value_common(
             prob_fn=self._dist.log_prob, no_evidence_fn=tf.zeros_like, step=step)
 
+    @utils.memoize
     def _compute_scope(self):
         """Computes scope """
         # Potentially copy scope from external feed

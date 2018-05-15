@@ -8,7 +8,7 @@
 import tensorflow as tf
 from libspn.graph.scope import Scope
 from libspn.graph.node import VarNode, DynamicVarNode
-from libspn import conf
+from libspn import conf, utils
 from libspn.utils.serialization import register_serializable
 
 
@@ -67,6 +67,7 @@ class ContVars(VarNode):
     def _compute_out_size(self):
         return self._num_vars
 
+    @utils.memoize
     def _compute_scope(self):
         return [Scope(self, i) for i in range(self._num_vars)]
 
@@ -121,6 +122,7 @@ class DynamicContVars(DynamicVarNode):
     def _compute_out_size(self):
         return self._num_vars
 
+    @utils.memoize
     def _compute_scope(self):
         return [Scope(self, i) for i in range(self._num_vars)]
 
