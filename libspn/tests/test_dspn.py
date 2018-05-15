@@ -7,7 +7,7 @@ from parameterized import parameterized, param
 import itertools
 
 
-MAX_STEPS = 8
+MAX_STEPS = 16
 BATCH_SIZE = 8
 
 
@@ -215,15 +215,17 @@ def get_dspn_unrolled(max_steps=MAX_STEPS, iv_inputs=True):
     prod1 = template_network.add_product(
         "prod1", inputs=[mixture_x1, mixture_y1, mixture_z1, mixture_in1], is_root=True)
 
-    top_network = dspn.TopNetwork()
+    # top_network = dspn.TopNetwork()
     top_weights = spn.Weights(num_weights=2, name="top_w")
-    top_root = top_network.add_sum("top_root", interface=interface_forward_declaration,
-                                   is_root=True, weights=top_weights)
+    # top_root = top_network.add_sum("top_root", inputs=[prod0, prod1],
+    #                                is_root=True, weights=top_weights)
 
     template_steps = template_network.build_n_steps(max_steps)
-    top_steps = top_network.build(template_steps)
+    # top_steps = top_network.build(template_steps)
+    top = spn.Sum(*template_steps[-1].root_nodes, name="Root")
+    top.set_weights(top_weights)
 
-    return top_steps[-1].root_nodes[0], [step.var_nodes for step in template_steps], \
+    return top, [step.var_nodes for step in template_steps], \
         [mixture_x0_w, mixture_x1_w,
          mixture_y0_w, mixture_y1_w,
          mixture_z0_w, mixture_z1_w,
@@ -244,7 +246,6 @@ def get_data(max_steps=MAX_STEPS, iv_inputs=True, batch_size=BATCH_SIZE):
             ix_feed.append(np.random.rand(batch_size, 2))
             iy_feed.append(np.random.rand(batch_size, 2))
             iz_feed.append(np.random.rand(batch_size, 2))
-
     return [ix_feed, iy_feed, iz_feed]
 
 
@@ -356,7 +357,7 @@ class TestDSPN(TestCase):
 
     @parameterized.expand(arg_product(
         [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [True, False],
-        [False, True]))
+        [False]))
     def test_mpe_path(self, log, inf_type, iv_inputs, varlen):
         sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else None
         sequence_lens_ph = tf.placeholder(tf.int32, [None]) if varlen else None
@@ -435,15 +436,18 @@ class TestDSPN(TestCase):
                 dynamic_out = sess.run(counts_per_step_dynamic, feed_dict=dynamic_feed)
                 unrolled_out = sess.run(counts_per_step_unrolled, feed_dict=unrolled_feed)
 
-        if not varlen:
-            print(unrolled_out)
         for node, do, uo in zip(dynamic_var_nodes, dynamic_out, unrolled_out):
             self.assertAllClose(do, uo)
+            if iv_inputs:
+                shape = (MAX_STEPS, BATCH_SIZE, node.num_vars, node.num_vals)
+                self.assertAllEqual(do.reshape(shape).sum(axis=-1), np.ones(shape[:-1]))
 
     @parameterized.expand(arg_product(
-        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],
-        [True, False]))
+        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [True],
+        [True]))
     def test_mpe_state(self, log, inf_type, iv_inputs, varlen):
+        # print(varlen)
+
         sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else None
         sequence_lens_ph = tf.placeholder(tf.int32, [None]) if varlen else None
 
@@ -486,26 +490,31 @@ class TestDSPN(TestCase):
         latent_dyn = dynamic_root.generate_ivs()
         dynamic_feed[latent_dyn] = latent_feed
 
-        mpe_state_gen_dynamic = spn.MPEState(log=log, dynamic=True, value_inference_type=inf_type)
+        with tf.name_scope("DynamicMPEState"):
+            mpe_state_gen_dynamic = spn.MPEState(
+                log=log, dynamic=True, value_inference_type=inf_type)
 
-        mpe_latent_dyn, *mpe_ivs_dyn = mpe_state_gen_dynamic.get_state(
-            dynamic_root, latent_dyn, *dynamic_var_nodes, sequence_lens=sequence_lens_ph)
+            mpe_latent_dyn, *mpe_ivs_dyn = mpe_state_gen_dynamic.get_state(
+                dynamic_root, latent_dyn, *dynamic_var_nodes, sequence_lens=sequence_lens_ph)
         if not varlen:
-            mpe_state_gen_unrolled = spn.MPEState(
-                log=log, dynamic=False, value_inference_type=inf_type)
-            mpe_latent_unr, *mpe_ivs_unr = mpe_state_gen_unrolled.get_state(
-                unrolled_root, latent_unr, *list(itertools.chain(*var_nodes)))
-        else:
-            mpe_ivs_unr_varlen = []
-            mpe_latent_unr_varlen = []
-            for unrolled_root, latent_node, var_nodes in zip(
-                    unrolled_root_all, latent_unr, var_nodes_all):
+            with tf.name_scope("UnrolledMPEState"):
                 mpe_state_gen_unrolled = spn.MPEState(
                     log=log, dynamic=False, value_inference_type=inf_type)
                 mpe_latent_unr, *mpe_ivs_unr = mpe_state_gen_unrolled.get_state(
-                    unrolled_root, latent_node, *list(itertools.chain(*var_nodes)))
-                mpe_latent_unr_varlen.append(mpe_latent_unr)
-                mpe_ivs_unr_varlen.append(mpe_ivs_unr)
+                    unrolled_root, latent_unr, *list(itertools.chain(*var_nodes)))
+        else:
+            mpe_ivs_unr_varlen = []
+            mpe_latent_unr_varlen = []
+
+            with tf.name_scope("UnrolledMPEState"):
+                for unrolled_root, latent_node, var_nodes in zip(
+                        unrolled_root_all, latent_unr, var_nodes_all):
+                    mpe_state_gen_unrolled = spn.MPEState(
+                        log=log, dynamic=False, value_inference_type=inf_type)
+                    mpe_latent_unr, *mpe_ivs_unr = mpe_state_gen_unrolled.get_state(
+                        unrolled_root, latent_node, *list(itertools.chain(*var_nodes)))
+                    mpe_latent_unr_varlen.append(mpe_latent_unr)
+                    mpe_ivs_unr_varlen.append(mpe_ivs_unr)
 
         with self.test_session() as sess:
             sess.run(init_dynamic)
@@ -546,6 +555,16 @@ class TestDSPN(TestCase):
         self.assertAllClose(mpe_latent_val_dyn[-1], mpe_latent_val_unr)
         for do, uo in zip(mpe_ivs_val_dyn, mpe_ivs_val_unr):
             self.assertAllClose(np.squeeze(do), np.squeeze(uo))
+
+        if iv_inputs:
+            seq_mask = np.reshape(
+                np.expand_dims(sequence_lens, 0) > np.expand_dims(np.arange(MAX_STEPS), 1),
+                (MAX_STEPS, BATCH_SIZE, 1))[::-1]
+            for node, val, val_unr in zip(dynamic_var_nodes, mpe_ivs_val_dyn, mpe_ivs_val_unr):
+                indices = np.logical_and(seq_mask, dynamic_feed[node] != -1)
+                self.assertAllEqual(dynamic_feed[node][indices], val_unr[indices])
+                self.assertAllEqual(dynamic_feed[node][indices], val[indices])
+
 
     @parameterized.expand(arg_product(
         [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],
