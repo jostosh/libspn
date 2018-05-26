@@ -37,13 +37,19 @@ class EMLearning():
         self._additive_smoothing = additive_smoothing
         self._initial_accum_value = initial_accum_value
         self._sequence_lens = sequence_lens
+
+        # In case there is a GaussianLeaf we shouldn't reduce our counts in the loop, since they
+        # need to be available per step for restimating
+        dynamic_reduce_in_loop = not traverse_graph(
+            root, lambda n: isinstance(n, GaussianLeaf) and n.learn_distribution_parameters)
         # Create internal MPE path generator
-        if mpe_path is None:
+        if mpe_path is None or (mpe_path._dynamic_reduce_in_loop and not dynamic_reduce_in_loop):
             self._dynamic = True if traverse_graph(root, lambda node: node.is_dynamic) else False
             self._mpe_path = MPEPath(log=log,
                                      value_inference_type=value_inference_type,
                                      add_random=add_random, use_unweighted=use_unweighted,
-                                     dynamic=self._dynamic)
+                                     dynamic=self._dynamic,
+                                     dynamic_reduce_in_loop=dynamic_reduce_in_loop)
         else:
             self._mpe_path = mpe_path
         # Create a name scope
@@ -105,10 +111,11 @@ class EMLearning():
                         self._mpe_path.counts[pn.node])
                     assign_ops.append(tf.assign_add(pn.accum, counts_summed_batch))
 
+            counts_table = self._mpe_path.counts_per_step if self._dynamic else \
+                self._mpe_path.counts
             for dn in self._gaussian_leaf_nodes:
                 with tf.name_scope(dn.name_scope):
-                    counts = self._mpe_path.counts[dn.node]
-                    update_value = dn.node._compute_hard_em_update(counts)
+                    update_value = dn.node._compute_hard_em_update(counts_table[dn.node])
                     with tf.control_dependencies(update_value.values()):
                         assign_ops.append(tf.assign_add(dn.accum, update_value['accum']))
                         assign_ops.append(tf.assign_add(dn.sum_data, update_value['sum_data']))

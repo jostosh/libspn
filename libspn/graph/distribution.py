@@ -360,24 +360,23 @@ class GaussianLeaf(VarNode):
         return out
 
     def _compute_hard_em_update(self, counts):
-        counts_reshaped = tf.reshape(counts, (-1, self._num_vars, self._num_components))
+        # Shaping this way works for both dynamic=True and dynamic=False
+        shape = (-1, self._num_vars, self._num_components)
+        counts_reshaped = tf.reshape(counts, shape=shape)
         # Determine accumulates per component
         accum = tf.reduce_sum(counts_reshaped, axis=0)
 
         # Tile the feed
-        tiled_feed = self._tile_num_components(self._get_feed(maybe_unstack=False))
-        # if self._dynamic:
-        #     tiled_feed = tf.reshape(tiled_feed, shape=(-1, self._num_vars, self._num_components))
+        tiled_feed = tf.reshape(
+            self._tile_num_components(self._get_feed(maybe_unstack=False)), shape=shape)
         data_per_component = tf.multiply(counts_reshaped, tiled_feed, name="DataPerComponent")
-        # print(tiled_feed.shape, counts_reshaped.shape)
         squared_data_per_component = tf.multiply(
             counts_reshaped, tf.square(tiled_feed), name="SquaredDataPerComponent")
         sum_data = tf.reduce_sum(data_per_component, axis=0)
         sum_data_squared = tf.reduce_sum(squared_data_per_component, axis=0)
-        if self._dynamic:
-            print(sum_data.shape)
-            sum_data = tf.reduce_sum(sum_data, axis=0)
-            sum_data_squared = tf.reduce_sum(sum_data_squared, axis=0)
+        # if self._dynamic:
+        #     sum_data = tf.reduce_sum(sum_data, axis=0)
+        #     sum_data_squared = tf.reduce_sum(sum_data_squared, axis=0)
         return {'accum': accum, "sum_data": sum_data, "sum_data_squared": sum_data_squared}
 
     def _compute_gradient(self, incoming_grad):
