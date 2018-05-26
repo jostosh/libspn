@@ -75,7 +75,8 @@ class IVs(VarNode):
         return [Scope(self, i)
                 for i in range(self._num_vars)
                 for _ in range(self._num_vals)]
-
+    
+    @utils.lru_cache
     def _compute_value(self):
         """Assemble the TF operations computing the output value of the node
         for a normal upwards pass.
@@ -95,6 +96,7 @@ class IVs(VarNode):
         # Reshape
         return tf.reshape(oh, [-1, self._num_vars * self._num_vals])
 
+    @utils.lru_cache
     def _compute_mpe_state(self, counts):
         r = tf.reshape(counts, (-1, self._num_vars, self._num_vals))
 

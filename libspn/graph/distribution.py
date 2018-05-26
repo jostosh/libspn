@@ -351,7 +351,7 @@ class GaussianLeaf(VarNode):
         out = tf.gather(tf.reshape(self._loc_variable, (-1,)), indices=indices, axis=0)
 
         # Check whether we have a sequence dimension in input and reshape output accordingly
-        if len(counts.shape) == 3:
+        if self._dynamic:
             shape_tensor = tf.shape(counts)
             sequence_dim = shape_tensor[0]
             batch_dim = shape_tensor[1]
