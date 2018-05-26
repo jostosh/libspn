@@ -240,22 +240,29 @@ class Weights(ParamNode):
             return tf.log(self._variable)
 
     def _compute_hard_em_update(self, counts):
-        # TODO: Need a better way to determing rank of counts
-        if self.num_sums == 1:
-            return tf.reduce_sum(counts, axis=0, keep_dims=True)
-        else:
-            return tf.reduce_sum(counts, axis=0, keep_dims=False)
+        if len(counts.shape) == 3:
+            return tf.reduce_sum(counts, axis=0)
+        return counts
+        # # TODO: Need a better way to determing rank of counts
+        # if self.num_sums == 1:
+        #     return tf.reduce_sum(counts, axis=0, keep_dims=True)
+        # else:
+        #     return tf.reduce_sum(counts, axis=0, keep_dims=False)
 
     def _compute_hard_gd_update(self, counts, actual_counts=None):
         if actual_counts is not None:
             delta_counts = tf.subtract(counts, actual_counts)
         else:
             delta_counts = counts
-        # TODO: Need a better way to determing rank of counts
-        if self.num_sums == 1:
-            return tf.reduce_sum(delta_counts, axis=0, keep_dims=True)
-        else:
-            return tf.reduce_sum(delta_counts, axis=0, keep_dims=False)
+        if len(delta_counts.shape) == 3:
+            return tf.reduce_sum(delta_counts, axis=0)
+        return delta_counts
+        #
+        # # TODO: Need a better way to determing rank of counts
+        # if self.num_sums == 1:
+        #     return tf.reduce_sum(delta_counts, axis=0, keep_dims=True)
+        # else:
+        #     return tf.reduce_sum(delta_counts, axis=0, keep_dims=False)
 
 
 def assign_weights(root, value, name=None):

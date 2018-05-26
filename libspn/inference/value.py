@@ -10,7 +10,9 @@ from types import MappingProxyType
 import abc
 from libspn.graph.algorithms import compute_graph_up, compute_graph_up_dynamic
 from libspn.graph.node import DynamicVarNode, DynamicInterface
+from libspn.graph.distribution import GaussianLeaf
 from libspn.inference.type import InferenceType
+from libspn import utils
 
 
 class BaseValue(abc.ABC):
@@ -98,6 +100,10 @@ class LogValue(BaseValue):
 
 class DynamicBaseValue(BaseValue, abc.ABC):
 
+    @utils.lru_cache
+    def read_node_val(self, node, t):
+        return self._values[node].read(t)
+
     def get_value(self, root, return_sequence=False, sequence_lens=None):
         """Assemble a TF operation computing the values of nodes of the SPN
         rooted in ``root``.
@@ -128,6 +134,8 @@ class DynamicBaseValue(BaseValue, abc.ABC):
                         kwargs['step'] = step
                     if isinstance(node, DynamicInterface):
                         args = [interface_value_map[node]] if node in interface_value_map else []
+                        kwargs['step'] = step
+                    if isinstance(node, GaussianLeaf) and node.is_dynamic:
                         kwargs['step'] = step
                     inference_type = self._inference_type or node.inference_type
                     if inference_type == InferenceType.MARGINAL:

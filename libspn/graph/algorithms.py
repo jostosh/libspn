@@ -447,7 +447,6 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
         name="BackwardLoop"
     )
 
-
     return {node: arr for node, arr in zip(node_order, arrays_or_reduced_output)}
 
 

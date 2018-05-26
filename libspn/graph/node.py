@@ -147,6 +147,10 @@ class Input():
         return isinstance(self.node, VarNode)
 
     @property
+    def is_dynamic_var(self):
+        return isinstance(self.node, DynamicVarNode)
+
+    @property
     def is_distribution(self):
         return isinstance(self.node, DistributionNode)
 

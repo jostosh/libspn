@@ -54,12 +54,16 @@ class GaussianLeaf(VarNode):
                  initialization_data=None, estimate_variance_init=True, total_counts_init=1,
                  learn_dist_params=False, train_var=True, loc_init=0.0, scale_init=1.0,
                  train_mean=True, use_prior=False, prior_alpha=2.0, prior_beta=3.0, min_stddev=1e-2,
-                 evidence_indicator_feed=None, softplus_scale=False):
+                 evidence_indicator_feed=None, softplus_scale=False, time_major=True,
+                 max_steps=None, dynamic=False):
         self._loc_variable = None
         self._scale_variable = None
         self._num_vars = num_vars
         self._num_components = num_components
         self._softplus_scale = softplus_scale
+        self._dynamic = dynamic
+        self._time_major = time_major
+        self._max_steps = max_steps
 
         # Initial value for means
         if isinstance(loc_init, float):
@@ -118,13 +122,18 @@ class GaussianLeaf(VarNode):
         return self._evidence_indicator
 
     @property
+    def batch_axis(self):
+        return 1 if self._dynamic and self._time_major else 0
+
+    @property
     def learn_distribution_parameters(self):
         """Flag indicating whether this node learns its parameters. """
         return self._learn_dist_params
 
     @utils.docinherit(VarNode)
     def _create_placeholder(self):
-        return tf.placeholder(conf.dtype, [None, self._num_vars])
+        shape = ([self._max_steps] if self._dynamic else []) + [None, self._num_vars]
+        return tf.placeholder(conf.dtype, shape=shape)
 
     def _create_evidence_indicator(self):
         """Creates a placeholder with default value. The default value is a ``Tensor`` of shape
@@ -133,8 +142,9 @@ class GaussianLeaf(VarNode):
         Return:
             Evidence indicator placeholder: a placeholder ``Tensor`` set to True for each variable.
         """
+        shape = ([self._max_steps] if self._dynamic else []) + [None, self._num_vars]
         return tf.placeholder_with_default(
-            tf.cast(tf.ones_like(self._placeholder), tf.bool), shape=[None, self._num_vars])
+            tf.cast(tf.ones_like(self._placeholder), tf.bool), shape=shape)
 
     def attach_evidence_indicator(self, indicator):
         """Set a tensor that feeds the evidence indicators.
@@ -216,6 +226,23 @@ class GaussianLeaf(VarNode):
         self._scale_init = data['variance_init']
         super().deserialize(data)
 
+    @property
+    def batch_size(self):
+        axis = 1 if self._dynamic else 0
+        return tf.shape(self._feed)[axis]
+
+    @property
+    def is_dynamic(self):
+        return self._dynamic
+
+    @property
+    def max_steps(self):
+        return self._max_steps
+
+    @property
+    def time_major(self):
+        return self._time_major
+
     def _total_accumulates(self, init_val, shape):
         """Creates a ``Variable`` that holds the counts per component.
 
@@ -249,6 +276,22 @@ class GaussianLeaf(VarNode):
     def _compute_out_size(self):
         return self._num_vars * self._num_components
 
+    def _get_feed(self, step=None, maybe_unstack=True):
+        return self._maybe_unstack(self._feed, step) if maybe_unstack else self._feed
+
+    def _get_evidence(self, step=None):
+        return self._maybe_unstack(self._evidence_indicator, step)
+
+    def _maybe_unstack(self, tensor, step):
+        if self._dynamic:
+            if step is None:
+                raise ValueError("{}: should be given a step when computing "
+                                 "value. Make sure to turn on dynamic flag elsewhere."
+                                 .format(self.name))
+            tensor_array = tf.TensorArray(dtype=tensor.dtype, size=self._max_steps).unstack(tensor)
+            tensor = tensor_array.read(step)
+        return tensor
+
     def _tile_num_components(self, tensor):
         """Tiles a ``Tensor`` so that its last axis contains ``num_components`` repetitions of the
         original values. If the incoming tensor's last dim size equals 1, it will tile along this
@@ -266,7 +309,7 @@ class GaussianLeaf(VarNode):
         rank = len(tensor.shape)
         return tf.tile(tensor, [1 for _ in range(rank - 1)] + [self._num_components])
 
-    def _evidence_mask(self, value, no_evidence_fn):
+    def _evidence_mask(self, value, no_evidence_fn, step=None):
         """Consists of selecting the (log) pdf of the input or ``1`` (``0`` for log) in case
         of lacking evidence.
 
@@ -278,20 +321,21 @@ class GaussianLeaf(VarNode):
         Returns:
             Evidence masked output: Tensor containing pdf or no evidence values.
         """
-        out_shape = (-1, self._compute_out_size())
-        evidence = tf.reshape(self._tile_num_components(self.evidence), out_shape)
+        out_shape = (self.batch_size, self._compute_out_size())
+        evidence = tf.reshape(self._tile_num_components(self._get_evidence(step=step)), out_shape)
         value = tf.reshape(value, out_shape)
-        return tf.where(evidence, value, no_evidence_fn(value))
+        out = tf.where(evidence, value, no_evidence_fn(value))
+        return tf.reshape(out, shape=out_shape)
 
     @utils.docinherit(Node)
     def _compute_value(self, step=None):
-        return self._evidence_mask(
-            self._dist.prob(self._tile_num_components(self._feed)), tf.ones_like)
+        feed = self._tile_num_components(self._get_feed(step=step))
+        return self._evidence_mask(self._dist.prob(feed), tf.ones_like, step=step)
 
     @utils.docinherit(Node)
-    def _compute_log_value(self):
-        return self._evidence_mask(
-            self._dist.log_prob(self._tile_num_components(self._feed)), tf.zeros_like)
+    def _compute_log_value(self, step=None):
+        feed = self._tile_num_components(self._get_feed(step=step))
+        return self._evidence_mask(self._dist.log_prob(feed), tf.zeros_like, step=step)
 
     @utils.docinherit(Node)
     def _compute_scope(self):
@@ -304,21 +348,36 @@ class GaussianLeaf(VarNode):
         counts_reshaped = tf.reshape(counts, (-1, self._num_vars, self._num_components))
         indices = tf.argmax(counts_reshaped, axis=-1) + tf.expand_dims(
             tf.range(self._num_vars, dtype=tf.int64) * self._num_components, axis=0)
-        return tf.gather(tf.reshape(self._loc_variable, (-1,)), indices=indices, axis=0)
+        out = tf.gather(tf.reshape(self._loc_variable, (-1,)), indices=indices, axis=0)
 
-    @utils.docinherit(Node)
+        # Check whether we have a sequence dimension in input and reshape output accordingly
+        if len(counts.shape) == 3:
+            shape_tensor = tf.shape(counts)
+            sequence_dim = shape_tensor[0]
+            batch_dim = shape_tensor[1]
+            out = tf.reshape(out, (sequence_dim, batch_dim, self._num_vars))
+
+        return out
+
     def _compute_hard_em_update(self, counts):
         counts_reshaped = tf.reshape(counts, (-1, self._num_vars, self._num_components))
         # Determine accumulates per component
         accum = tf.reduce_sum(counts_reshaped, axis=0)
 
         # Tile the feed
-        tiled_feed = self._tile_num_components(self._feed)
+        tiled_feed = self._tile_num_components(self._get_feed(maybe_unstack=False))
+        # if self._dynamic:
+        #     tiled_feed = tf.reshape(tiled_feed, shape=(-1, self._num_vars, self._num_components))
         data_per_component = tf.multiply(counts_reshaped, tiled_feed, name="DataPerComponent")
+        # print(tiled_feed.shape, counts_reshaped.shape)
         squared_data_per_component = tf.multiply(
             counts_reshaped, tf.square(tiled_feed), name="SquaredDataPerComponent")
         sum_data = tf.reduce_sum(data_per_component, axis=0)
         sum_data_squared = tf.reduce_sum(squared_data_per_component, axis=0)
+        if self._dynamic:
+            print(sum_data.shape)
+            sum_data = tf.reduce_sum(sum_data, axis=0)
+            sum_data_squared = tf.reduce_sum(sum_data_squared, axis=0)
         return {'accum': accum, "sum_data": sum_data, "sum_data_squared": sum_data_squared}
 
     def _compute_gradient(self, incoming_grad):
@@ -358,6 +417,10 @@ class GaussianLeaf(VarNode):
         else:
             scale_grad = 2 * var_grad * scale
         return loc_grad, tf.reduce_sum(scale_grad, axis=0)
+
+    def _compute_log_mpe_value(self, step=None):
+        """Compute log mpe value """
+        return self._compute_log_value(step=step)
 
     def assign(self, accum, sum_data, sum_data_squared):
         """

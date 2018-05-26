@@ -9,6 +9,7 @@ import tensorflow as tf
 from libspn.graph.scope import Scope
 from libspn.graph.node import VarNode, DynamicVarNode
 from libspn import conf
+from libspn import utils
 from libspn.utils.serialization import register_serializable
 
 
@@ -124,7 +125,8 @@ class DynamicIVs(DynamicVarNode):
         name (str): Name of the node
     """
 
-    def __init__(self, max_steps, feed=None, num_vars=1, num_vals=2, name="IVs", time_major=True):
+    def __init__(self, max_steps, feed=None, num_vars=1, num_vals=2, name="DynamicIVs",
+                 time_major=True):
         if not isinstance(num_vars, int) or num_vars < 1:
             raise ValueError("num_vars must be a positive integer")
         if not isinstance(num_vals, int) or num_vals < 2:
@@ -196,7 +198,7 @@ class DynamicIVs(DynamicVarNode):
             :param **kwargs:
         """
         dense_ivs = self._compute_dense_array()
-        return dense_ivs.read(step)
+        return tf.reshape(dense_ivs.read(step), (self.batch_size, self._compute_out_size()))
 
     def _compute_mpe_state(self, counts):
         # TODO not thought about this yet

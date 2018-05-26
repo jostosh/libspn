@@ -206,14 +206,12 @@ class MPEPath:
 
         def reduce_parents_fun_step(t, node, parent_vals):
             # Sum up all parent vals
+            parent_vals = [p for p in parent_vals if p is not None]
             def accumulate():
-                # print(node.name, [p.shape for p in parent_vals])
                 if len(parent_vals) > 1:
                     # tf.accumulate_n will complain about a temporary variable being defined more
                     # than once, so use tf.add_n
                     return tf.add_n(parent_vals, name=node.name + "_add")
-
-                # if node.is_param:
 
                 return parent_vals[0]
 
@@ -242,14 +240,14 @@ class MPEPath:
 
                     if self._log:
                         return node._compute_log_mpe_path(
-                            summed, *[self._value.values[i.node].read(t)
+                            summed, *[self._value.read_node_val(i.node, t)  #.values[i.node].read(t)
                                       if i else None
                                       for i in node.inputs],
                             add_random=self._add_random,
                             use_unweighted=self._use_unweighted)
                     else:
                         return node._compute_mpe_path(
-                            summed, *[self._value.values[i.node].read(t)
+                            summed, *[self._value.read_node_val(i.node, t)
                                       if i else None
                                       for i in node.inputs],
                             add_random=self._add_random,
@@ -273,8 +271,6 @@ class MPEPath:
                     graph_input_default=graph_input_default,
                     reduce_parents_fun_step=reduce_parents_fun_step, reduce_init=tf.zeros,
                     reduce_binary_op=tf.add)
-                for node, c in self._true_counts.items():
-                    print(node, c.shape)
             else:
                 # Traverse the graph computing counts
                 self._true_counts = compute_graph_up_down_dynamic(
