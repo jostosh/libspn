@@ -69,6 +69,17 @@ def get_dspn(max_steps=MAX_STEPS, iv_inputs=True):
     intf0 = spn.DynamicInterface(name="interface0")
     intf1 = spn.DynamicInterface(name="interface1")
 
+    # Define template heads
+    # TODO now the order matters....
+    prod0 = spn.Product(mix_x0, mix_y0, mix_z0, name="prod0")
+    prod1 = spn.Product(mix_x1, mix_y1, mix_z1, name="prod1")
+
+    # Register sources for interface nodes
+    intf0.set_source(prod0)
+    intf1.set_source(prod1)
+    intf0._set_scope(prod0.get_scope())
+    intf1._set_scope(prod1.get_scope())
+
     mixture_in0_w = spn.Weights(num_weights=2, name="mixture_in0_w", init_value=weight_init_value)
     mix_int0 = spn.Sum(intf0, intf1, name="mixture_intf0", interface_head=True)
     mix_int0.set_weights(mixture_in0_w)
@@ -76,17 +87,6 @@ def get_dspn(max_steps=MAX_STEPS, iv_inputs=True):
     mixture_in1_w = spn.Weights(num_weights=2, name="mixture_in1_w", init_value=weight_init_value)
     mix_int1 = spn.Sum(intf0, intf1, name="mixture_intf1", interface_head=True)
     mix_int1.set_weights(mixture_in1_w)
-
-    # Define template heads
-    prod0 = spn.Product(mix_x0, mix_y0, mix_z0, name="prod0")
-    prod1 = spn.Product(mix_x1, mix_y1, mix_z1, name="prod1")
-
-    intf0._set_scope(prod0.get_scope())
-    intf1._set_scope(prod1.get_scope())
-
-    # Register sources for interface nodes
-    intf0.set_source(prod0)
-    intf1.set_source(prod1)
 
     prod0.add_values(mix_int0)
     prod1.add_values(mix_int1)

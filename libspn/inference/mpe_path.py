@@ -35,7 +35,8 @@ class MPEPath:
 
     def __init__(self, value=None, value_inference_type=None, log=True, add_random=None,
                  use_unweighted=False, dynamic=False, dynamic_reduce_in_loop=True):
-        self._counts = {}
+        self._true_counts = {}
+        self._actual_counts = {}
         self._counts_per_step = {}
         self._log = log
         self._add_random = add_random
@@ -56,6 +57,7 @@ class MPEPath:
                     self._value = Value(value_inference_type)
         else:
             self._value = value
+            self._log = value.log()
 
     @property
     def value(self):
@@ -64,9 +66,21 @@ class MPEPath:
 
     @property
     def counts(self):
-        """dict: Dictionary indexed by node, where each value is a lists of
-        tensors computing the branch counts for the inputs of the node."""
-        return MappingProxyType(self._counts)
+        """dict: Dictionary indexed by node, where each value is a list of tensors
+        computing the branch counts, based on the true value of the SPN's latent
+        variable, for the inputs of the node."""
+        return MappingProxyType(self._true_counts)
+
+    @property
+    def actual_counts(self):
+        """dict: Dictionary indexed by node, where each value is a list of tensors
+        computing the branch counts, based on the actual value calculated by the
+        SPN, for the inputs of the node."""
+        return MappingProxyType(self._actual_counts)
+
+    @property
+    def log(self):
+        return self._log
 
     @property
     def counts_per_step(self):
@@ -86,11 +100,12 @@ class MPEPath:
         """
         def down_fun(node, parent_vals):
             # Sum up all parent vals
+            parent_vals = [pv for pv in parent_vals if pv is not None]
             if len(parent_vals) > 1:
                 summed = tf.add_n(parent_vals, name=node.name + "_add")
             else:
                 summed = parent_vals[0]
-            self._counts[node] = summed
+            self._true_counts[node] = summed
             if node.is_op:
                 # Compute for inputs
                 with tf.name_scope(node.name):
@@ -100,25 +115,73 @@ class MPEPath:
                                       if i else None
                                       for i in node.inputs],
                             add_random=self._add_random,
-                            use_unweighted=self._use_unweighted)
+                            use_unweighted=self._use_unweighted,
+                            with_ivs=True)
                     else:
                         return node._compute_mpe_path(
                             summed, *[self._value.values[i.node]
                                       if i else None
                                       for i in node.inputs],
                             add_random=self._add_random,
-                            use_unweighted=self._use_unweighted)
+                            use_unweighted=self._use_unweighted,
+                            with_ivs=True)
 
         # Generate values if not yet generated
         if not self._value.values:
             self._value.get_value(root)
 
-        with tf.name_scope("MPEPath"):
+        with tf.name_scope("TrueMPEPath"):
             # Compute the tensor to feed to the root node
             graph_input = tf.ones_like(self._value.values[root])
 
             # Traverse the graph computing counts
-            self._counts = {}
+            self._true_counts = {}
+            compute_graph_up_down(root, down_fun=down_fun, graph_input=graph_input)
+
+    def get_mpe_path_actual(self, root):
+        """Assemble TF operations computing the actual branch counts for the MPE
+        downward path through the SPN rooted in ``root``.
+
+        Args:
+            root (Node): The root node of the SPN graph.
+        """
+        def down_fun(node, parent_vals):
+            # Sum up all parent vals
+            parent_vals = [pv for pv in parent_vals if pv is not None]
+            if len(parent_vals) > 1:
+                summed = tf.add_n(parent_vals, name=node.name + "_add")
+            else:
+                summed = parent_vals[0]
+            self._actual_counts[node] = summed
+            if node.is_op:
+                # Compute for inputs
+                with tf.name_scope(node.name):
+                    if self._log:
+                        return node._compute_log_mpe_path(
+                            summed, *[self._value.values[i.node]
+                                      if i else None
+                                      for i in node.inputs],
+                            add_random=self._add_random,
+                            use_unweighted=self._use_unweighted,
+                            with_ivs=False)
+                    else:
+                        return node._compute_mpe_path(
+                            summed, *[self._value.values[i.node]
+                                      if i else None
+                                      for i in node.inputs],
+                            add_random=self._add_random,
+                            use_unweighted=self._use_unweighted,
+                            with_ivs=False)
+
+        # Generate values if not yet generated
+        if not self._value.values:
+            self._value.get_value(root)
+
+        with tf.name_scope("ActualMPEPath"):
+            graph_input = tf.ones_like(self._value.values[root])
+
+            # Traverse the graph computing counts
+            self._actual_counts = {}
             compute_graph_up_down(root, down_fun=down_fun, graph_input=graph_input)
 
     def get_mpe_path(self, root, sequence_lens=None):
@@ -144,10 +207,13 @@ class MPEPath:
         def reduce_parents_fun_step(t, node, parent_vals):
             # Sum up all parent vals
             def accumulate():
+                # print(node.name, [p.shape for p in parent_vals])
                 if len(parent_vals) > 1:
                     # tf.accumulate_n will complain about a temporary variable being defined more
                     # than once, so use tf.add_n
                     return tf.add_n(parent_vals, name=node.name + "_add")
+
+                # if node.is_param:
 
                 return parent_vals[0]
 
@@ -202,20 +268,22 @@ class MPEPath:
 
             if self._dynamic_reduce_in_loop:
                 # Traverse the graph computing counts
-                self._counts = compute_graph_up_down_dynamic(
+                self._true_counts = compute_graph_up_down_dynamic(
                     root, down_fun_step=down_fun_time, graph_input_end=graph_input_end,
                     graph_input_default=graph_input_default,
                     reduce_parents_fun_step=reduce_parents_fun_step, reduce_init=tf.zeros,
                     reduce_binary_op=tf.add)
+                for node, c in self._true_counts.items():
+                    print(node, c.shape)
             else:
                 # Traverse the graph computing counts
-                self._counts = compute_graph_up_down_dynamic(
+                self._true_counts = compute_graph_up_down_dynamic(
                     root, down_fun_step=down_fun_time, graph_input_end=graph_input_end,
                     graph_input_default=graph_input_default,
                     reduce_parents_fun_step=reduce_parents_fun_step)
 
                 with tf.name_scope("SumAcrossSequence"):
-                    for node in self._counts:
-                        self._counts_per_step[node] = per_step = self._counts[node].stack()
-                        self._counts[node] = tf.reduce_sum(
+                    for node in self._true_counts:
+                        self._counts_per_step[node] = per_step = self._true_counts[node].stack()
+                        self._true_counts[node] = tf.reduce_sum(
                             per_step, axis=0, name=node.name + "CountsTotalPerBatch")

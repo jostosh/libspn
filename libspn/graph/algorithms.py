@@ -309,8 +309,11 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
             batch_size = root.get_batch_size()
             arrays_or_reduced_output = []
             for node in node_order:
-                out_size = node.get_out_size()
-                out_size = (out_size,) if isinstance(out_size, int) else out_size
+                if node.is_param:
+                    out_size = tuple(node.variable.shape.as_list())
+                else:
+                    out_size = node.get_out_size()
+                    out_size = (out_size,) if isinstance(out_size, int) else out_size
                 shape = (batch_size,) + out_size
                 arrays_or_reduced_output.append(reduce_init(
                     shape=shape, name=node.name + "DownInit"))
@@ -403,6 +406,7 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
                                     lambda: reduce_parents_fun_step(t, child, parent_vals))
                             else:
                                 # Combine value of parents to get the value of the node
+                                # print()
                                 reduced_parents_val = reduce_parents_fun_step(t, child, parent_vals)
                         with tf.name_scope(write_val_step_scope):
                             # Write the combined value to the array or accumulate directly
@@ -428,9 +432,13 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
             for inp_ind, (parent_node, parent_input_nr) in enumerate(parents[source.receiver]):
                 interface_sources_prev[s_ind][inp_ind] = down_values[parent_node][parent_input_nr]
 
+        # [[print(ne.shape) for ne in n] for n in interface_sources_prev]
+        # [print(arr.name, arr.shape) for arr in arrays_or_reduced_output]
         return t - 1, interface_sources_prev, arrays_or_reduced_output
 
     # Execute the loop, from t == max_steps - 1 through t == 0
+    # [[print(ne.shape) for ne in n] for n in interface_sources_prev]
+    # [print(arr.name, arr.shape) for arr in arrays_or_reduced_output]
     step = tf.constant(maxlen - 1)
     _, _, arrays_or_reduced_output = tf.while_loop(
         cond=lambda t, *_: tf.greater_equal(t, 0),
@@ -438,6 +446,7 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
         loop_vars=[step, interface_sources_prev, arrays_or_reduced_output],
         name="BackwardLoop"
     )
+
 
     return {node: arr for node, arr in zip(node_order, arrays_or_reduced_output)}
 

@@ -7,13 +7,13 @@
 
 import tensorflow as tf
 from types import MappingProxyType
-from abc import ABC
+import abc
 from libspn.graph.algorithms import compute_graph_up, compute_graph_up_dynamic
 from libspn.graph.node import DynamicVarNode, DynamicInterface
 from libspn.inference.type import InferenceType
 
 
-class BaseValue(ABC):
+class BaseValue(abc.ABC):
     """Assembles TF operations computing the values of nodes of the SPN during
     an upwards pass. The value can be either an SPN value (marginal inference)
     or an MPN value (MPE inference) or a mixture of both.
@@ -26,9 +26,19 @@ class BaseValue(ABC):
             MPE inference will be used for all nodes.
     """
 
-    def __init__(self, inference_type=None):
+    def __init__(self, inference_type=None, log=True, name="Value"):
+        if inference_type not in [None, InferenceType.MARGINAL, InferenceType.MPE]:
+            raise ValueError(
+                "Inference type must either None or libspn.InferenceType.MARGINAL "
+                "or libspn.InferenceType.MPE, got {}.".format(inference_type))
         self._inference_type = inference_type
         self._values = {}
+        self._log = log
+        self._name = name
+
+    @property
+    def log(self):
+        return self._log
 
     @property
     def values(self):
@@ -36,8 +46,23 @@ class BaseValue(ABC):
         operations computing value for each node."""
         return MappingProxyType(self._values)
 
-
-class Value(BaseValue):
+    def _value_fn(self):
+        def fun(node, *args):
+            with tf.name_scope(node.name):
+                inference_type = self._inference_type or node.inference_type
+                if inference_type == InferenceType.MARGINAL:
+                    if self._log:
+                        return node._compute_log_value(*args)
+                    else:
+                        return node._compute_value(*args)
+                elif inference_type == InferenceType.MPE:
+                    if self._log:
+                        return node._compute_log_mpe_value(*args)
+                    else:
+                        return node._compute_mpe_value(*args)
+                else:
+                    raise TypeError("Inference type must be either marginal or MPE.")
+        return fun
 
     def get_value(self, root):
         """Assemble a TF operation computing the values of nodes of the SPN
@@ -53,54 +78,25 @@ class Value(BaseValue):
             Tensor: A tensor of shape ``[None, num_outputs]``, where the first
             dimension corresponds to the batch size.
         """
-        def fun(node, *args):
-            with tf.name_scope(node.name):
-                if (self._inference_type == InferenceType.MARGINAL
-                    or (self._inference_type is None and
-                        node.inference_type == InferenceType.MARGINAL)):
-                    return node._compute_value(*args)
-                else:
-                    return node._compute_mpe_value(*args)
 
         self._values = {}
-        with tf.name_scope("Value"):
-            return compute_graph_up(root, val_fun=fun,
-                                    all_values=self._values)
+        with tf.name_scope(self._name):
+            return compute_graph_up(root, val_fun=self._value_fn(), all_values=self._values)
+
+
+class Value(BaseValue):
+
+    def __init__(self, inference_type=None, name="Value"):
+        super().__init__(inference_type=inference_type, name=name, log=False)
 
 
 class LogValue(BaseValue):
 
-    def get_value(self, root):
-        """Assemble TF operations computing the log values of nodes of the SPN
-        rooted in ``root``.
-
-        Returns the operation computing the log value for the ``root``.
-        Operations computing log values for other nodes can be obtained using
-        :obj:`values`.
-
-        Args:
-            root: Root node of the SPN.
-
-        Returns:
-            Tensor: A tensor of shape ``[None, num_outputs]``, where the first
-            dimension corresponds to the batch size.
-        """
-        def fun(node, *args):
-            with tf.name_scope(node.name):
-                if (self._inference_type == InferenceType.MARGINAL
-                    or (self._inference_type is None and
-                        node.inference_type == InferenceType.MARGINAL)):
-                    return node._compute_log_value(*args)
-                else:
-                    return node._compute_log_mpe_value(*args)
-
-        self._values = {}
-        with tf.name_scope("LogValue"):
-            return compute_graph_up(root, val_fun=fun,
-                                    all_values=self._values)
+    def __init__(self, inference_type=None, name="LogValue"):
+        super().__init__(inference_type=inference_type, name=name, log=True)
 
 
-class DynamicValue(BaseValue):
+class DynamicBaseValue(BaseValue, abc.ABC):
 
     def get_value(self, root, return_sequence=False, sequence_lens=None):
         """Assemble a TF operation computing the values of nodes of the SPN
@@ -118,6 +114,8 @@ class DynamicValue(BaseValue):
         """
         if sequence_lens is not None:
             time0 = root.get_maxlen() - sequence_lens
+
+        no_evidence_fn = tf.zeros_like if self._log else tf.ones_like
 
         def template_val_fun(step, interface_value_map):
             def fun(node, *args):
@@ -131,27 +129,34 @@ class DynamicValue(BaseValue):
                     if isinstance(node, DynamicInterface):
                         args = [interface_value_map[node]] if node in interface_value_map else []
                         kwargs['step'] = step
-                    if (self._inference_type == InferenceType.MARGINAL
-                        or (self._inference_type is None and
-                            node.inference_type == InferenceType.MARGINAL)):
-                        val = node._compute_value(*args, **kwargs)
+                    inference_type = self._inference_type or node.inference_type
+                    if inference_type == InferenceType.MARGINAL:
+                        if self._log:
+                            val = node._compute_log_value(*args, **kwargs)
+                        else:
+                            val = node._compute_value(*args, **kwargs)
+                    elif inference_type == InferenceType.MPE:
+                        if self._log:
+                            val = node._compute_log_mpe_value(*args, **kwargs)
+                        else:
+                            val = node._compute_mpe_value(*args, **kwargs)
                     else:
-                        val = node._compute_mpe_value(*args, **kwargs)
+                        raise TypeError("Inference type must be eithe MARGINAL or MPE")
                     if sequence_lens is not None and not node.is_param:
                         # If we have sequences with possibly different lengths
-                        ones = tf.ones_like(val)
+                        no_evidence = no_evidence_fn(val)
                         if node.interface_head:
                             # In case we have sequences with same length
-                            return tf.where(tf.less_equal(step, time0), ones, val)
-                        return tf.where(tf.less(step, time0), ones, val)
+                            return tf.where(tf.less_equal(step, time0), no_evidence, val)
+                        return tf.where(tf.less(step, time0), no_evidence, val)
                     if node.interface_head:
                         # In case we have sequences with same length
-                        return tf.cond(tf.equal(step, 0), lambda: tf.ones_like(val), lambda: val)
+                        return tf.cond(tf.equal(step, 0), lambda: no_evidence_fn(val), lambda: val)
                     return val
             return fun
 
         self._values = {}
-        with tf.name_scope("Value"):
+        with tf.name_scope(self._name):
             top_val, top_per_step = compute_graph_up_dynamic(
                 root=root, val_fun_step=template_val_fun, all_values=self._values,
                 interface_init=tf.ones
@@ -163,60 +168,15 @@ class DynamicValue(BaseValue):
         return top_val
 
 
-class DynamicLogValue(BaseValue):
+class DynamicValue(DynamicBaseValue):
 
-    def get_value(self, root, return_sequence=False, sequence_lens=None):
-        """Assemble a TF operation computing the values of nodes of the SPN
-        rooted in ``root``.
+    def __init__(self, inference_type=None, name="DynamicValue"):
+        super().__init__(inference_type=inference_type, name=name, log=False)
 
-        Returns the operation computing the value for the ``root``. Operations
-        computing values for other nodes can be obtained using :obj:`values`.
 
-        Args:
-            root (Node): The root node of the SPN graph.
+class DynamicLogValue(DynamicBaseValue):
 
-        Returns:
-            Tensor: A tensor of shape ``[None, num_outputs]``, where the first
-            dimension corresponds to the batch size.
-        """
-        if sequence_lens is not None:
-            time0 = root.get_maxlen() - sequence_lens
+    def __init__(self, inference_type=None, name="DynamicLogValue"):
+        super().__init__(inference_type=inference_type, name=name, log=True)
 
-        def val_fun_step(step, interface_value_map):
-            def fun(node, *args):
-                with tf.name_scope(node.name):
-                    kwargs = {}
-                    if isinstance(node, DynamicVarNode):
-                        kwargs['step'] = step
-                    if isinstance(node, DynamicInterface):
-                        args = [interface_value_map[node]] if node in interface_value_map else []
-                        kwargs['step'] = step
-                    if (self._inference_type == InferenceType.MARGINAL
-                        or (self._inference_type is None and
-                            node.inference_type == InferenceType.MARGINAL)):
-                        val = node._compute_log_value(*args, **kwargs)
-                    else:
-                        val = node._compute_log_mpe_value(*args, **kwargs)
-                    if sequence_lens is not None and not node.is_param:
-                        # If we have sequences with possibly different lengths
-                        zeros = tf.zeros_like(val)
-                        if node.interface_head:
-                            # In case we have sequences with same length
-                            return tf.where(tf.less_equal(step, time0), zeros, val)
-                        return tf.where(tf.less(step, time0), zeros, val)
-                    if node.interface_head:
-                        # In case we have sequences with same length
-                        return tf.cond(tf.equal(step, 0), lambda: tf.zeros_like(val), lambda: val)
-                    return val
-            return fun
 
-        self._values = {}
-        with tf.name_scope("LogValue"):
-            top_val, top_per_step = compute_graph_up_dynamic(
-                root=root, val_fun_step=val_fun_step, all_values=self._values,
-                interface_init=tf.zeros)
-
-        if return_sequence:
-            # Optionally return top value per time step
-            return top_val, top_per_step
-        return top_val
