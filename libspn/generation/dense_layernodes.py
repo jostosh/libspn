@@ -413,7 +413,7 @@ class DenseSPNGeneratorLayerNodes:
             if node.is_op:
                 for i in node.inputs:
                     if (i and  # Input not empty
-                            not(i.is_param or i.is_var or i.is_dynamic_var)):
+                            not(i.is_param or i.is_var or i.is_dynamic_var or i.is_dynamic_interface)):
                         parents[i.node].append(node)
                         node_to_depth[i.node] = node_to_depth[node] + 1
 
@@ -448,9 +448,12 @@ class DenseSPNGeneratorLayerNodes:
 
         # Iterate through each depth of the SPN, starting from the deepest layer,
         # moving up to the root node
+
         for depth in range(spn_depth, 1, -1):
-            if isinstance(depths[depth][0], (Sum, ParSums)):  # A Sums Layer
+            self.__debug1("Converting to layer nodes at depth {}".format(depth))
+            if all(isinstance(node, (Sum, ParSums)) for node in depths[depth]):  # A Sums Layer
                 # Create a default SumsLayer node
+                self.__debug1("Converting layer to a SumsLayer")
                 with tf.name_scope("Layer%s" % depth):
                     sums_layer = SumsLayer(name="SumsLayer-%s.%s" % (depth, 1))
                 # Initialize a counter for keeping track of number of sums
@@ -500,7 +503,8 @@ class DenseSPNGeneratorLayerNodes:
                 # After all nodes at a certain depth are modelled into a Layer-node,
                 # set num-sums parameter accordingly
                 sums_layer.set_sum_sizes(num_or_size_sums)
-            elif isinstance(depths[depth][0], (Product, PermProducts)):  # A Products Layer
+            elif all(isinstance(node, (Product, PermProducts)) for node in depths[depth]):  # A Products Layer
+                self.__debug1("Converting layer to a ProductsLayer")
                 with tf.name_scope("Layer%s" % depth):
                     prods_layer = ProductsLayer(name="ProductsLayer-%s.%s" % (depth, 1))
                 # Initialize a counter for keeping track of number of prods
@@ -511,6 +515,7 @@ class DenseSPNGeneratorLayerNodes:
                 num_or_size_prods = []
                 # Iterate through each node at the current depth of the SPN
                 for node in depths[depth]:
+                    self.__debug1("Now working on node {}".format(node.name))
                     # Get input values and sizes of the product node
                     input_values = list(node.values)
                     input_sizes = list(node.get_input_sizes())
@@ -539,7 +544,7 @@ class DenseSPNGeneratorLayerNodes:
                                 if value.indices is not None:
                                     # If so, then just add the num-prods of the
                                     # layer-op as offset
-                                    indices = value.indices + layer_num_prods
+                                    indices = value.indices + [layer_num_prods]
                                 else:
                                     # If not, then create a list accrodingly
                                     indices = list(range(layer_num_prods,
@@ -556,7 +561,7 @@ class DenseSPNGeneratorLayerNodes:
                 # After all nodes at a certain depth are modelled into a Layer-node,
                 # set num-prods parameter accordingly
                 prods_layer.set_prod_sizes(num_or_size_prods)
-            else:
-                raise StructureError("Unknown node-type: %s", depths[depth][0])
+            # else:
+            #     raise StructureError("Unknown node-type: %s", depths[depth][0])
 
         return root
