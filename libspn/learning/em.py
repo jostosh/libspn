@@ -31,11 +31,12 @@ class EMLearning():
 
     def __init__(self, root, mpe_path=None, log=True, value_inference_type=None,
                  additive_smoothing=None, add_random=None, initial_accum_value=None,
-                 use_unweighted=False, sequence_lens=None):
+                 use_unweighted=False, sample=False, sequence_lens=None):
         self._root = root
         self._log = log
         self._additive_smoothing = additive_smoothing
         self._initial_accum_value = initial_accum_value
+        self._sample = sample
         self._sequence_lens = sequence_lens
 
         # In case there is a GaussianLeaf we shouldn't reduce our counts in the loop, since they
@@ -49,7 +50,8 @@ class EMLearning():
                                      value_inference_type=value_inference_type,
                                      add_random=add_random, use_unweighted=use_unweighted,
                                      dynamic=self._dynamic,
-                                     dynamic_reduce_in_loop=dynamic_reduce_in_loop)
+                                     dynamic_reduce_in_loop=dynamic_reduce_in_loop,
+                                     sample=sample)
         else:
             self._mpe_path = mpe_path
         # Create a name scope
