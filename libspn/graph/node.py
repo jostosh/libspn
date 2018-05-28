@@ -154,6 +154,10 @@ class Input():
     def is_distribution(self):
         return isinstance(self.node, DistributionNode)
 
+    @property
+    def is_dynamic_interface(self):
+        return isinstance(self.node, DynamicInterface)
+
     def get_size(self, input_tensor):
         """Get the size of the input.
 
