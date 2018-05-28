@@ -149,7 +149,7 @@ class DynamicBaseValue(BaseValue, abc.ABC):
                         else:
                             val = node._compute_mpe_value(*args, **kwargs)
                     else:
-                        raise TypeError("Inference type must be eithe MARGINAL or MPE")
+                        raise TypeError("Inference type must be either MARGINAL or MPE")
                     if sequence_lens is not None and not node.is_param:
                         # If we have sequences with possibly different lengths
                         no_evidence = no_evidence_fn(val)

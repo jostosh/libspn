@@ -240,7 +240,7 @@ class MPEPath:
 
                     if self._log:
                         return node._compute_log_mpe_path(
-                            summed, *[self._value.read_node_val(i.node, t)  #.values[i.node].read(t)
+                            summed, *[self._value.read_node_val(i.node, t)
                                       if i else None
                                       for i in node.inputs],
                             add_random=self._add_random,

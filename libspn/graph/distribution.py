@@ -374,9 +374,6 @@ class GaussianLeaf(VarNode):
             counts_reshaped, tf.square(tiled_feed), name="SquaredDataPerComponent")
         sum_data = tf.reduce_sum(data_per_component, axis=0)
         sum_data_squared = tf.reduce_sum(squared_data_per_component, axis=0)
-        # if self._dynamic:
-        #     sum_data = tf.reduce_sum(sum_data, axis=0)
-        #     sum_data_squared = tf.reduce_sum(sum_data_squared, axis=0)
         return {'accum': accum, "sum_data": sum_data, "sum_data_squared": sum_data_squared}
 
     def _compute_gradient(self, incoming_grad):
