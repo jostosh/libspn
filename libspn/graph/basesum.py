@@ -382,9 +382,14 @@ class BaseSum(OpNode, abc.ABC):
             x_acc = tf.reduce_sum(x, axis=self._op_axis)
         else:
             x_acc = tf.squeeze(x, axis=self._op_axis)
-
         _, _, *value_sizes = self.get_input_sizes()
-        return x_acc, tf.split(x_acc, value_sizes, axis=self._op_axis)
+        if self.interface_head:
+            print(self.num_sums)
+            print(self.values)
+            print(x.shape, x_acc.shape, value_sizes,
+                  [(inp.name, inp.shape) for inp in input_tensors if inp is not None])
+        return x_acc, tf.split(x_acc, value_sizes, axis=self._op_axis) if len(value_sizes) > 1 \
+            else [x_acc]
 
     @utils.docinherit(OpNode)
     @utils.lru_cache
