@@ -666,10 +666,10 @@ class BaseSum(OpNode, abc.ABC):
             x_eq_max *= tf.expand_dims(tf.to_float(self._build_mask()), axis=self._batch_axis)
         x_eq_max /= tf.reduce_sum(x_eq_max, axis=self._reduce_axis, keepdims=True)
 
-        return tfd.Categorical(probs=x_eq_max).sample()
+        return tfd.Categorical(probs=x_eq_max, name="StochasticArgMax", dtype=tf.int32).sample()
 
     @utils.lru_cache
-    def _reduce_sample_log(self, x):
+    def _reduce_sample_log(self, x, sample_prob=0.5):
         """Samples a tensor with log likelihoods, i.e. sample(x, axis=reduce_axis)).
 
         Args:
@@ -679,12 +679,17 @@ class BaseSum(OpNode, abc.ABC):
         Returns:
             A ``Tensor`` reduced over the last axis.
         """
-        x_normalized = x - tf.expand_dims(
-            self._reduce_marginal_inference_log(x), axis=self._reduce_axis)
-        return tfd.Categorical(logits=x_normalized).sample()
+        x_sum = self._reduce_marginal_inference_log(x)
+        x_normalized = x - tf.expand_dims(x_sum, axis=self._reduce_axis)
+        sample = tfd.Categorical(logits=x_normalized, dtype=tf.int32).sample()
+        if sample_prob is not None:
+            sample_mask = tfd.Bernoulli(probs=sample_prob, dtype=tf.int32).sample(
+                sample_shape=tf.shape(x_sum))
+            return (1 - sample_mask) * tf.to_int32(self._reduce_argmax(x)) + sample_mask * sample
+        return sample
 
     @utils.lru_cache
-    def _reduce_sample(self, x, epsilon=1e-8):
+    def _reduce_sample(self, x, epsilon=1e-8, sample_prob=None):
         """Samples a tensor with likelihoods, i.e. sample(x, axis=reduce_axis)).
 
         Args:
@@ -694,9 +699,14 @@ class BaseSum(OpNode, abc.ABC):
         Returns:
             A ``Tensor`` reduced over the last axis.
         """
-        x_normalized = x / (tf.expand_dims(
-            self._reduce_marginal_inference(x, axis=self.reduce_axis)) + epsilon)
-        return tfd.Categorical(probs=x_normalized).sample()
+        x_sum = self._reduce_marginal_inference(x, axis=self._reduce_axis)
+        x_normalized = x / tf.expand_dims(x_sum + epsilon, axis=self._reduce_axis)
+        sample = tfd.Categorical(probs=x_normalized).sample()
+        if sample_prob is not None:
+            sample_mask = tfd.Bernoulli(probs=sample_prob, dtype=tf.int32).sample(
+                sample_shape=tf.shape(x_sum))
+            return (1 - sample_mask) * tf.to_int32(self._reduce_argmax(x)) + sample_mask * sample
+        return sample
 
     @staticmethod
     @utils.lru_cache
