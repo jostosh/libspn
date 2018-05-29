@@ -34,7 +34,8 @@ class MPEPath:
     """
 
     def __init__(self, value=None, value_inference_type=None, log=True, add_random=None,
-                 use_unweighted=False, dynamic=False, dynamic_reduce_in_loop=True, sample=False):
+                 use_unweighted=False, dynamic=False, dynamic_reduce_in_loop=True, sample=False,
+                 sample_prob=None):
         self._true_counts = {}
         self._actual_counts = {}
         self._counts_per_step = {}
@@ -42,6 +43,7 @@ class MPEPath:
         self._add_random = add_random
         self._use_unweighted = use_unweighted
         self._sample = sample
+        self._sample_prob = sample_prob
         self._dynamic = dynamic
         self._dynamic_reduce_in_loop = dynamic_reduce_in_loop
         # Create internal value generator
@@ -118,7 +120,8 @@ class MPEPath:
                             add_random=self._add_random,
                             use_unweighted=self._use_unweighted,
                             with_ivs=True,
-                            sample=self._sample)
+                            sample=self._sample,
+                            sample_prob=self._sample_prob)
                     else:
                         return node._compute_mpe_path(
                             summed, *[self._value.values[i.node]
@@ -127,7 +130,8 @@ class MPEPath:
                             add_random=self._add_random,
                             use_unweighted=self._use_unweighted,
                             with_ivs=True,
-                            sample=self._sample)
+                            sample=self._sample,
+                            sample_prob=self._sample_prob)
 
         # Generate values if not yet generated
         if not self._value.values:
@@ -167,7 +171,8 @@ class MPEPath:
                             add_random=self._add_random,
                             use_unweighted=self._use_unweighted,
                             with_ivs=False,
-                            sample=self._sample)
+                            sample=self._sample,
+                            sample_prob=self._sample_prob)
                     else:
                         return node._compute_mpe_path(
                             summed, *[self._value.values[i.node]
@@ -176,7 +181,8 @@ class MPEPath:
                             add_random=self._add_random,
                             use_unweighted=self._use_unweighted,
                             with_ivs=False,
-                            sample=self._sample)
+                            sample=self._sample,
+                            sample_prob=self._sample_prob)
 
         # Generate values if not yet generated
         if not self._value.values:
@@ -250,7 +256,8 @@ class MPEPath:
                                       for i in node.inputs],
                             add_random=self._add_random,
                             use_unweighted=self._use_unweighted,
-                            sample=self._sample)
+                            sample=self._sample,
+                            sample_prob=self._sample_prob)
                     else:
                         return node._compute_mpe_path(
                             summed, *[self._value.read_node_val(i.node, t)
@@ -258,7 +265,8 @@ class MPEPath:
                                       for i in node.inputs],
                             add_random=self._add_random,
                             use_unweighted=self._use_unweighted,
-                            sample=self._sample)
+                            sample=self._sample,
+                            sample_prob=self._sample_prob)
 
         # Generate values if not yet generated
         if not self._value.values:
