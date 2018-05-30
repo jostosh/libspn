@@ -15,6 +15,8 @@ from libspn import conf
 import numpy as np
 from collections import OrderedDict, deque, defaultdict
 import itertools
+from copy import deepcopy
+from libspn.graph.node import Input
 
 
 @utils.register_serializable
@@ -97,6 +99,19 @@ class SumsLayer(BaseSum):
         self._sum_sizes = sum_sizes
         self._max_sum_size = max(sum_sizes) if sum_sizes else 0
 
+    def add_values(self, *values, deduplicate=True):
+        """Add more inputs providing input values to this node.
+
+        Args:
+            *values (input_like): Inputs providing input values to this node.
+                See :meth:`~libspn.Input.as_input` for possible values.
+        """
+        if not deduplicate:
+            self._values += self._parse_inputs(*values, deduplicate=deduplicate)
+        else:
+            self._values = self._parse_inputs(*self._values, *values, deduplicate=deduplicate)
+        self._reset_sum_sizes()
+
     def set_sum_sizes(self, sizes):
         """Sets the sum sizes. The sum of the sizes given should match the total number of inputs.
 
@@ -158,6 +173,68 @@ class SumsLayer(BaseSum):
                 return None
 
         return self._compute_scope(weight_scopes, ivs_scopes, *value_scopes)
+
+    def _parse_inputs(self, *input_likes, deduplicate=True):
+        """Convert the given input_like values to Inputs and verify that the
+        inputs are compatible with this node.
+
+        Args:
+            *input_likes (input_like): Input descriptions. See
+                :meth:`~libspn.Input.as_input` for possible values.
+
+        Returns:
+            tuple of Input: Tuple of :class:``~libspn.Input``, one for each
+            argument.
+        """
+        if len(input_likes) <= 1 or not deduplicate:
+            return super(SumsLayer, self)._parse_inputs(*input_likes)
+
+        def convert(input_like):
+            inpt = Input.as_input(input_like)
+            if inpt and inpt.node.tf_graph is not self.tf_graph:
+                raise StructureError("%s is in a different TF graph than %s"
+                                     % (inpt.node, self))
+            return inpt
+
+        self._ind_sum = 0
+
+        def inp_indices(inp):
+            # print(inp, self._ind_sum)
+            if inp:
+                if inp.indices:
+                    self._ind_sum += len(inp.indices)
+                    return inp.indices
+                if inp.node:
+                    size = inp.node.get_out_size()
+                    self._ind_sum += size
+                    return list(range(size))
+                return [None]
+            return [None]
+
+        # Get last input
+        prev_input = convert(input_likes[0])
+        # Get indices
+        combined_indices = deepcopy(inp_indices(prev_input))
+        inputs_unique_nodes = []
+        for inp_like in input_likes[1:]:
+            inp = convert(inp_like)
+            if inp.node and inp.node == prev_input.node:
+                ind = inp_indices(inp)
+                combined_indices.extend(ind)
+            else:
+                if prev_input.node:
+                    inputs_unique_nodes.append(convert((prev_input.node, combined_indices)))
+                else:
+                    inputs_unique_nodes.append(None)
+                combined_indices = deepcopy(inp_indices(inp))
+                prev_input = inp
+        if combined_indices:
+            if prev_input.node:
+                inputs_unique_nodes.append(convert((prev_input.node, combined_indices)))
+            else:
+                inputs_unique_nodes.append(None)
+
+        return tuple(inputs_unique_nodes)
 
     def _build_mask(self):
         """Constructs mask that could be used to cancel out 'columns' that are padded as a result of

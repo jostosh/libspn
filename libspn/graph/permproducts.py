@@ -260,7 +260,7 @@ class PermProducts(OpNode):
 
             return counts_indices_list
 
-        if(len(self._input_sizes) > 1):
+        if (len(self._input_sizes) > 1):
             permuted_indices = permute_counts(self._input_sizes)
             summed_counts = tf.reduce_sum(utils.gather_cols_3d(counts, permuted_indices),
                                           axis=-1)

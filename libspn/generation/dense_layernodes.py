@@ -23,6 +23,7 @@ from itertools import chain, product
 import tensorflow as tf
 import numpy as np
 import random
+import time
 
 
 class DenseSPNGeneratorLayerNodes:
@@ -467,12 +468,12 @@ class DenseSPNGeneratorLayerNodes:
                     # TODO: To be replaced with node.num_sums once AbstractSums
                     # class is introduced
                     # No. of sums modelled by the current node
-                    node_num_sums = (1 if isinstance(node, Sum) else node.num_sums)
                     # Add Input values of the current node to the SumsLayer node
-                    sums_layer.add_values(*node.values * node_num_sums)
+                    sums_layer.add_values(*node.values * node.num_sums,
+                                          deduplicate=node == depths[depth][-1])
                     # Add sum-input-size, of each sum modelled in the current node,
                     # to the list
-                    num_or_size_sums += [sum(node.get_input_sizes()[2:])] * node_num_sums
+                    num_or_size_sums += [sum(node.get_input_sizes()[2:])] * node.num_sums
                     # Visit each parent of the current node
                     for parent in parents[node]:
                         values = list(parent.values)
@@ -490,7 +491,7 @@ class DenseSPNGeneratorLayerNodes:
                                     # If not, then create a list accrodingly
                                     indices = list(range(layer_num_sums,
                                                          (layer_num_sums +
-                                                          node_num_sums)))
+                                                          node.num_sums)))
                                 # Replace previous (node) Input value in the
                                 # current parent node, with the new layer-node value
                                 values[i] = (sums_layer, indices)
@@ -499,7 +500,7 @@ class DenseSPNGeneratorLayerNodes:
                         # the new child (Layer-node)
                         parent.set_values(*values)
                     # Increment num-sums-counter of the layer-node
-                    layer_num_sums += node_num_sums
+                    layer_num_sums += node.num_sums
                 # After all nodes at a certain depth are modelled into a Layer-node,
                 # set num-sums parameter accordingly
                 sums_layer.set_sum_sizes(num_or_size_sums)
@@ -514,8 +515,8 @@ class DenseSPNGeneratorLayerNodes:
                 # modelled in the layer node
                 num_or_size_prods = []
                 # Iterate through each node at the current depth of the SPN
-                for node in depths[depth]:
-                    self.__debug1("Now working on node {}".format(node.name))
+                for i, node in enumerate(depths[depth]):
+                    self.__debug1("Now working on node {}/{}".format(i, len(depths[depth])))
                     # Get input values and sizes of the product node
                     input_values = list(node.values)
                     input_sizes = list(node.get_input_sizes())
@@ -529,7 +530,8 @@ class DenseSPNGeneratorLayerNodes:
                         prod_input_size = int(sum(input_sizes))
 
                     # Add Input values of the current node to the ProductsLayer node
-                    prods_layer.add_values(*input_values)
+                    prods_layer.add_values(*input_values, deduplicate=node == depths[depth][-1])
+
                     # Add prod-input-size, of each product modelled in the current
                     # node, to the list
                     num_or_size_prods += [prod_input_size] * node_num_prods

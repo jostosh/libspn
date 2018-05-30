@@ -259,7 +259,7 @@ def scatter_cols(params, indices, num_out_cols, name=None):
         elif param_dims == 2:
             param_size = param_shape[1].value
         else:
-            raise ValueError("'params' must be 1D or 2D")
+            raise ValueError("'params' must be 1D or 2D, not {}D".format(param_dims))
         # We need the size defined for optimizations
         if param_size is None:
             raise RuntimeError("The indexed dimension of 'params' is not specified")

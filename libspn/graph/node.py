@@ -345,6 +345,30 @@ class Node(ABC):
                        skip_params=skip_params)
         return c.val
 
+    def get_num_edges(self, skip_params=False):
+        """Get the number of nodes in the SPN graph for which this node is root.
+
+        Args:
+            skip_params (bool): If ``True`` don't count param nodes.
+
+        Returns:
+            int: Number of nodes.
+        """
+
+        class Counter:
+            """"Mutable int."""
+
+            def __init__(self):
+                self.val = 0
+
+            def __call__(self, node):
+                if hasattr(node, "inputs"):
+                    self.val += len(node.inputs) if node.inputs else 0
+
+        c = Counter()
+        traverse_graph(self, fun=c, skip_params=skip_params)
+        return c.val
+
     def get_out_size(self):
         """Get the size of the output of this node.  The size might depend on
         the inputs of this node and might change if new inputs are added.
