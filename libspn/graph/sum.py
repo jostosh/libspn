@@ -35,7 +35,8 @@ class Sum(BaseSum):
     """
 
     def __init__(self, *values, weights=None, ivs=None, inference_type=InferenceType.MARGINAL,
-                 interface_head=False, name="Sum"):
+                 sample_prob=None, dropconnect_keep_prob=None, interface_head=False, name="Sum"):
         super().__init__(
             *values, num_sums=1, weights=weights, ivs=ivs, inference_type=inference_type,
+            sample_prob=sample_prob, dropconnect_keep_prob=dropconnect_keep_prob, 
             interface_head=interface_head, name=name)

@@ -7,6 +7,7 @@
 
 from types import MappingProxyType
 import tensorflow as tf
+from libspn.graph.basesum import BaseSum
 from libspn.inference.value import Value, LogValue, DynamicValue, DynamicLogValue
 from libspn.graph.algorithms import compute_graph_up_down, compute_graph_up_down_dynamic
 import libspn.conf as conf
@@ -34,8 +35,9 @@ class MPEPath:
     """
 
     def __init__(self, value=None, value_inference_type=None, log=True, add_random=None,
-                 use_unweighted=False, dynamic=False, dynamic_reduce_in_loop=True, sample=False,
-                 sample_prob=None):
+                 use_unweighted=False, sample=False, sample_prob=None, sample_rank_based=None,
+                 dropconnect_keep_prob=None, dropout_keep_prob=None, dynamic=False, 
+                 dynamic_reduce_in_loop=True):
         self._true_counts = {}
         self._actual_counts = {}
         self._counts_per_step = {}
@@ -44,20 +46,17 @@ class MPEPath:
         self._use_unweighted = use_unweighted
         self._sample = sample
         self._sample_prob = sample_prob
+        self._sample_rank_based = sample_rank_based
         self._dynamic = dynamic
         self._dynamic_reduce_in_loop = dynamic_reduce_in_loop
         # Create internal value generator
         if value is None:
             if dynamic:
-                if log:
-                    self._value = DynamicLogValue(value_inference_type)
-                else:
-                    self._value = DynamicValue(value_inference_type)
+                v_class = DynamicLogValue if log else DynamicValue
             else:
-                if log:
-                    self._value = LogValue(value_inference_type)
-                else:
-                    self._value = Value(value_inference_type)
+                v_class = LogValue if log else Value
+            self._value = v_class(value_inference_type, dropout_keep_prob=dropout_keep_prob, 
+                                  dropconnect_keep_prob=dropconnect_keep_prob)
         else:
             self._value = value
             self._log = value.log()
@@ -109,29 +108,22 @@ class MPEPath:
             else:
                 summed = parent_vals[0]
             self._true_counts[node] = summed
+            basesum_kwargs = dict(
+                add_random=self._add_random, use_unweighted=self._use_unweighted,
+                with_ivs=True, sample=self._sample, sample_prob=self._sample_prob,
+                sample_rank_based=self._sample_rank_based)
             if node.is_op:
+                kwargs = basesum_kwargs if isinstance(node, BaseSum) else dict()
                 # Compute for inputs
                 with tf.name_scope(node.name):
                     if self._log:
                         return node._compute_log_mpe_path(
-                            summed, *[self._value.values[i.node]
-                                      if i else None
-                                      for i in node.inputs],
-                            add_random=self._add_random,
-                            use_unweighted=self._use_unweighted,
-                            with_ivs=True,
-                            sample=self._sample,
-                            sample_prob=self._sample_prob)
+                            summed, *[self._value.values[i.node] if i else None
+                                      for i in node.inputs], **kwargs)
                     else:
                         return node._compute_mpe_path(
-                            summed, *[self._value.values[i.node]
-                                      if i else None
-                                      for i in node.inputs],
-                            add_random=self._add_random,
-                            use_unweighted=self._use_unweighted,
-                            with_ivs=True,
-                            sample=self._sample,
-                            sample_prob=self._sample_prob)
+                            summed, *[self._value.values[i.node] if i else None
+                                      for i in node.inputs], **kwargs)
 
         # Generate values if not yet generated
         if not self._value.values:
@@ -160,29 +152,22 @@ class MPEPath:
             else:
                 summed = parent_vals[0]
             self._actual_counts[node] = summed
+            basesum_kwargs = dict(
+                add_random=self._add_random, use_unweighted=self._use_unweighted,
+                with_ivs=False, sample=self._sample, sample_prob=self._sample_prob,
+                sample_rank_based=self._sample_rank_based)
             if node.is_op:
                 # Compute for inputs
+                kwargs = basesum_kwargs if isinstance(node, BaseSum) else dict()
                 with tf.name_scope(node.name):
                     if self._log:
                         return node._compute_log_mpe_path(
-                            summed, *[self._value.values[i.node]
-                                      if i else None
-                                      for i in node.inputs],
-                            add_random=self._add_random,
-                            use_unweighted=self._use_unweighted,
-                            with_ivs=False,
-                            sample=self._sample,
-                            sample_prob=self._sample_prob)
+                            summed, *[self._value.values[i.node] if i else None
+                                      for i in node.inputs], **kwargs)
                     else:
                         return node._compute_mpe_path(
-                            summed, *[self._value.values[i.node]
-                                      if i else None
-                                      for i in node.inputs],
-                            add_random=self._add_random,
-                            use_unweighted=self._use_unweighted,
-                            with_ivs=False,
-                            sample=self._sample,
-                            sample_prob=self._sample_prob)
+                            summed, *[self._value.values[i.node] if i else None
+                                      for i in node.inputs], **kwargs)
 
         # Generate values if not yet generated
         if not self._value.values:
@@ -244,29 +229,24 @@ class MPEPath:
             # Default behavior
             return accumulate()
 
+        basesum_kwargs = dict(
+            add_random=self._add_random, use_unweighted=self._use_unweighted,
+            with_ivs=False, sample=self._sample, sample_prob=self._sample_prob,
+            sample_rank_based=self._sample_rank_based)
+        
         def down_fun_time(t, node, summed):
             if node.is_op:
                 # Compute for inputs
                 with tf.name_scope(node.name):
-
+                    kwargs = basesum_kwargs if isinstance(node, BaseSum) else dict()
                     if self._log:
                         return node._compute_log_mpe_path(
                             summed, *[self._value.read_node_val(i.node, t)
-                                      if i else None
-                                      for i in node.inputs],
-                            add_random=self._add_random,
-                            use_unweighted=self._use_unweighted,
-                            sample=self._sample,
-                            sample_prob=self._sample_prob)
+                                      if i else None for i in node.inputs], **kwargs)
                     else:
                         return node._compute_mpe_path(
                             summed, *[self._value.read_node_val(i.node, t)
-                                      if i else None
-                                      for i in node.inputs],
-                            add_random=self._add_random,
-                            use_unweighted=self._use_unweighted,
-                            sample=self._sample,
-                            sample_prob=self._sample_prob)
+                                      if i else None for i in node.inputs], **kwargs)
 
         # Generate values if not yet generated
         if not self._value.values:

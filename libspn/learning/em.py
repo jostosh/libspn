@@ -31,7 +31,8 @@ class EMLearning():
 
     def __init__(self, root, mpe_path=None, log=True, value_inference_type=None,
                  additive_smoothing=None, add_random=None, initial_accum_value=None,
-                 use_unweighted=False, sample=False, sequence_lens=None, sample_prob=None):
+                 use_unweighted=False, sample=False, sample_prob=None, sample_rank_based=None,
+                 dropout_keep_prob=None, dropconnect_keep_prob=None, sequence_lens=None):
         self._root = root
         self._log = log
         self._additive_smoothing = additive_smoothing
@@ -51,7 +52,10 @@ class EMLearning():
                                      add_random=add_random, use_unweighted=use_unweighted,
                                      sample=sample, sample_prob=sample_prob,
                                      dynamic_reduce_in_loop=dynamic_reduce_in_loop,
-                                     dynamic=self._dynamic)
+                                     dynamic=self._dynamic, 
+                                     dropconnect_keep_prob=dropconnect_keep_prob,
+                                     dropout_keep_prob=dropout_keep_prob, 
+                                     sample_rank_based=sample_rank_based)
         else:
             self._mpe_path = mpe_path
         # Create a name scope
