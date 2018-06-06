@@ -472,7 +472,7 @@ class DenseSPNGeneratorLayerNodes:
                     # No. of sums modelled by the current node
                     # Add Input values of the current node to the SumsLayer node
                     sums_layer.add_values(*node.values * node.num_sums,
-                                          deduplicate=node == depths[depth][-1])
+                                          deduplicate=False)
                     # Add sum-input-size, of each sum modelled in the current node,
                     # to the list
                     num_or_size_sums += [sum(node.get_input_sizes()[2:])] * node.num_sums
@@ -532,7 +532,7 @@ class DenseSPNGeneratorLayerNodes:
                         prod_input_size = int(sum(input_sizes))
 
                     # Add Input values of the current node to the ProductsLayer node
-                    prods_layer.add_values(*input_values, deduplicate=node == depths[depth][-1])
+                    prods_layer.add_values(*input_values, deduplicate=False)
 
                     # Add prod-input-size, of each product modelled in the current
                     # node, to the list
