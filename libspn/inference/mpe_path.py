@@ -37,7 +37,7 @@ class MPEPath:
     def __init__(self, value=None, value_inference_type=None, log=True, add_random=None,
                  use_unweighted=False, sample=False, sample_prob=None, sample_rank_based=None,
                  dropconnect_keep_prob=None, dropout_keep_prob=None, dynamic=False, 
-                 dynamic_reduce_in_loop=True):
+                 dynamic_reduce_in_loop=False):
         self._true_counts = {}
         self._actual_counts = {}
         self._counts_per_step = {}
@@ -52,11 +52,23 @@ class MPEPath:
         # Create internal value generator
         if value is None:
             if dynamic:
-                v_class = DynamicLogValue if log else DynamicValue
+                if log:
+                    self._value = DynamicLogValue(
+                        value_inference_type, dropout_keep_prob=dropout_keep_prob,
+                        dropconnect_keep_prob=dropconnect_keep_prob)
+                else:
+                    self._value = DynamicValue(
+                        value_inference_type, dropout_keep_prob=dropout_keep_prob,
+                        dropconnect_keep_prob=dropconnect_keep_prob)
             else:
-                v_class = LogValue if log else Value
-            self._value = v_class(value_inference_type, dropout_keep_prob=dropout_keep_prob, 
-                                  dropconnect_keep_prob=dropconnect_keep_prob)
+                if log:
+                    self._value = LogValue(
+                        value_inference_type, dropout_keep_prob=dropout_keep_prob,
+                        dropconnect_keep_prob=dropconnect_keep_prob)
+                else:
+                    self._value = Value(
+                        value_inference_type, dropout_keep_prob=dropout_keep_prob,
+                        dropconnect_keep_prob=dropconnect_keep_prob)
         else:
             self._value = value
             self._log = value.log()
@@ -231,7 +243,7 @@ class MPEPath:
 
         basesum_kwargs = dict(
             add_random=self._add_random, use_unweighted=self._use_unweighted,
-            with_ivs=False, sample=self._sample, sample_prob=self._sample_prob,
+            with_ivs=True, sample=self._sample, sample_prob=self._sample_prob,
             sample_rank_based=self._sample_rank_based)
         
         def down_fun_time(t, node, summed):
@@ -268,13 +280,13 @@ class MPEPath:
                     reduce_binary_op=tf.add)
             else:
                 # Traverse the graph computing counts
-                self._true_counts = compute_graph_up_down_dynamic(
+                self._counts_per_step = compute_graph_up_down_dynamic(
                     root, down_fun_step=down_fun_time, graph_input_end=graph_input_end,
                     graph_input_default=graph_input_default,
                     reduce_parents_fun_step=reduce_parents_fun_step)
 
                 with tf.name_scope("SumAcrossSequence"):
-                    for node in self._true_counts:
-                        self._counts_per_step[node] = per_step = self._true_counts[node].stack()
+                    for node in self._counts_per_step:
+                        self._counts_per_step[node] = per_step = self._counts_per_step[node].stack()
                         self._true_counts[node] = tf.reduce_sum(
                             per_step, axis=0, name=node.name + "CountsTotalPerBatch")

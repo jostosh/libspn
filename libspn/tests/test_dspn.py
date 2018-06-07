@@ -376,9 +376,10 @@ class TestDSPN(TestCase):
             self.assertAllClose(do, uo)
 
     @parameterized.expand(arg_product(
-        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],
+        [True, False], [spn.InferenceType.MARGINAL, spn.InferenceType.MPE], [True, False],
         [True, False]))
     def test_mpe_state(self, log, inf_type, iv_inputs, varlen):
+        spn.conf.argmax_zero = True
         sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else None
         sequence_lens_ph = tf.placeholder(tf.int32, [None]) if varlen else None
 
