@@ -99,7 +99,7 @@ class DenseSPNGeneratorLayerNodes:
 
     def __init__(self, num_decomps, num_subsets, num_mixtures,
                  input_dist=InputDist.MIXTURE, num_input_mixtures=None,
-                 balanced=True, node_type=NodeType.BLOCK):
+                 balanced=True, node_type=NodeType.BLOCK, num_decomps_per_level=None):
         # Args
         if not isinstance(num_decomps, int) or num_decomps < 1:
             raise ValueError("num_decomps must be a positive integer")
@@ -119,6 +119,7 @@ class DenseSPNGeneratorLayerNodes:
         self.num_decomps = num_decomps
         self.num_subsets = num_subsets
         self.num_mixtures = num_mixtures
+        self.num_decomps_per_level = num_decomps_per_level
         self.input_dist = input_dist
         self.balanced = balanced
         self.node_type = node_type
@@ -261,8 +262,16 @@ class DenseSPNGeneratorLayerNodes:
         self.__debug3("Decomposing subset:\n%s", subset_info.subset)
         num_elems = len(subset_info.subset)
         num_subsubsets = min(num_elems, self.num_subsets)  # Requested num subsets
+
+        if self.num_decomps_per_level:
+            if subset_info.level >= len(self.num_decomps_per_level):
+                num_decomps = self.num_decomps_per_level[-1]
+            else:
+                num_decomps = self.num_decomps_per_level[subset_info.level]
+        else:
+            num_decomps = self.num_decomps
         partitions = utils.random_partitions(subset_info.subset, num_subsubsets,
-                                             self.num_decomps,
+                                             num_decomps,
                                              balanced=self.balanced,
                                              rnd=rnd,
                                              stirling=self.__stirling)
@@ -466,13 +475,15 @@ class DenseSPNGeneratorLayerNodes:
                 # modelled in the layer node
                 num_or_size_sums = []
                 # Iterate through each node at the current depth of the SPN
-                for node in depths[depth]:
+                for i, node in enumerate(depths[depth]):
+                    if i % 10000 == 0:
+                        self.__debug1("Now working on node {}/{}".format(i, len(depths[depth])))
                     # TODO: To be replaced with node.num_sums once AbstractSums
                     # class is introduced
                     # No. of sums modelled by the current node
                     # Add Input values of the current node to the SumsLayer node
                     sums_layer.add_values(*node.values * node.num_sums,
-                                          deduplicate=False)
+                                          deduplicate=i == len(depths[depth]) - 1)
                     # Add sum-input-size, of each sum modelled in the current node,
                     # to the list
                     num_or_size_sums += [sum(node.get_input_sizes()[2:])] * node.num_sums
@@ -518,7 +529,8 @@ class DenseSPNGeneratorLayerNodes:
                 num_or_size_prods = []
                 # Iterate through each node at the current depth of the SPN
                 for i, node in enumerate(depths[depth]):
-                    self.__debug1("Now working on node {}/{}".format(i, len(depths[depth])))
+                    if i % 10000 == 0:
+                        self.__debug1("Now working on node {}/{}".format(i, len(depths[depth])))
                     # Get input values and sizes of the product node
                     input_values = list(node.values)
                     input_sizes = list(node.get_input_sizes())
@@ -532,7 +544,7 @@ class DenseSPNGeneratorLayerNodes:
                         prod_input_size = int(sum(input_sizes))
 
                     # Add Input values of the current node to the ProductsLayer node
-                    prods_layer.add_values(*input_values, deduplicate=False)
+                    prods_layer.add_values(*input_values, deduplicate=i == len(depths[depth]) - 1)
 
                     # Add prod-input-size, of each product modelled in the current
                     # node, to the list
