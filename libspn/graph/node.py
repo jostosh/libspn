@@ -389,8 +389,9 @@ class Node(ABC):
             Tensor: If dimension is unknown
             int: If dimension is known
         """
-
-        node = traverse_graph(self, lambda node, *_: node.is_var, skip_params=True)
+        node = traverse_graph(self, lambda node, *_: node.is_dynamic, skip_params=True)
+        if node is None:
+            node = traverse_graph(self, lambda node, *_: node.is_var, skip_params=True)
         if node is None:
             raise StructureError("There is no VarNode in the graph, cannot determine batch size")
 
