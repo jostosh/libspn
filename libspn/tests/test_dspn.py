@@ -104,6 +104,59 @@ def get_dspn(max_steps=MAX_STEPS, iv_inputs=True):
         top_weights]
 
 
+def get_dspn_layer_nodes(max_steps=MAX_STEPS, iv_inputs=True):
+    tf.set_random_seed(1234)
+
+    weight_init_value = spn.ValueType.RANDOM_UNIFORM()
+
+    if iv_inputs:
+        ix = spn.DynamicIVs(name="iv_x", num_vars=1, num_vals=2, max_steps=max_steps)
+        iy = spn.DynamicIVs(name="iv_y", num_vars=1, num_vals=2, max_steps=max_steps)
+        iz = spn.DynamicIVs(name="iv_z", num_vars=1, num_vals=2, max_steps=max_steps)
+
+        x_in, y_in, z_in = [ix, iy, iz]
+        nw = 2
+    else:
+        ix = spn.DynamicContVars(name="iv_x", num_vars=2, max_steps=max_steps)
+        iy = spn.DynamicContVars(name="iv_y", num_vars=2, max_steps=max_steps)
+        iz = spn.DynamicContVars(name="iv_z", num_vars=2, max_steps=max_steps)
+
+        x_in = spn.Product(ix, name="ProdX")
+        y_in = spn.Product(iy, name="ProdY")
+        z_in = spn.Product(iz, name="ProdZ")
+
+        nw = 1
+
+    sum0 = spn.SumsLayer(x_in, x_in, y_in, y_in, z_in, z_in, num_or_size_sums=6)
+    sum0_weights = sum0.generate_weights(init_value=weight_init_value)
+
+    # Define interface network
+    intf0 = spn.DynamicInterface()
+
+    # Define template heads
+    prod0 = spn.ProductsLayer((sum0, [0, 2, 4]), (sum0, [1, 3, 5]), num_or_size_prods=2)
+    intf0._set_scope(prod0.get_scope())
+    intf0.set_source(prod0)
+
+    interface_mixture = spn.ParSums(intf0, num_sums=2, name="InterfaceMixture", interface_head=True)
+
+    prod0 = spn.ProductsLayer((interface_mixture, [0]), (sum0, [0, 2, 4]),
+                              (interface_mixture, [1]), (sum0, [1, 3, 5]),
+                              num_or_size_prods=2)
+    intf0.set_source(prod0)
+
+    # Register sources for interface nodes
+    intf_mixture_weights = interface_mixture.generate_weights(init_value=weight_init_value)
+
+    # Define top network
+    top_weights = spn.Weights(num_weights=2, name="top_w")
+    top_net = spn.Sum(prod0, name="top")
+    top_net.set_weights(top_weights)
+
+    return top_net, [ix, iy, iz], [
+        sum0_weights, intf_mixture_weights, top_weights]
+
+
 def get_dspn_unrolled(max_steps=MAX_STEPS, iv_inputs=True):
     template_network = dspn.TemplateNetwork()
 
@@ -156,15 +209,17 @@ def get_dspn_unrolled(max_steps=MAX_STEPS, iv_inputs=True):
     prod1 = template_network.add_product(
         "prod1", inputs=[mixture_x1, mixture_y1, mixture_z1, mixture_in1], is_root=True)
 
-    top_network = dspn.TopNetwork()
+    # top_network = dspn.TopNetwork()
     top_weights = spn.Weights(num_weights=2, name="top_w")
-    top_root = top_network.add_sum("top_root", interface=interface_forward_declaration,
-                                   is_root=True, weights=top_weights)
+    # top_root = top_network.add_sum("top_root", inputs=[prod0, prod1],
+    #                                is_root=True, weights=top_weights)
 
     template_steps = template_network.build_n_steps(max_steps)
-    top_steps = top_network.build(template_steps)
+    # top_steps = top_network.build(template_steps)
+    top = spn.Sum(*template_steps[-1].root_nodes, name="Root")
+    top.set_weights(top_weights)
 
-    return top_steps[-1].root_nodes[0], [step.var_nodes for step in template_steps], \
+    return top, [step.var_nodes for step in template_steps], \
         [mixture_x0_w, mixture_x1_w,
          mixture_y0_w, mixture_y1_w,
          mixture_z0_w, mixture_z1_w,
@@ -212,10 +267,14 @@ def get_feed_dicts(var_nodes, dynamic_var_nodes, iv_inputs, varlen=False):
 
 class TestDSPN(TestCase):
 
-    def test_scope(self):
-        dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn()
+    @parameterized.expand(arg_product([False, True]))
+    def test_scope(self, layer_nodes):
+        if layer_nodes:
+            dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn_layer_nodes()
+        else:
+            dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn()
 
-        intf_head0 = dynamic_root.values[0].node.values[-1].node
+        intf_head0 = dynamic_root.values[0].node.values[-1 if not layer_nodes else 0].node
 
         self.assertTrue(dynamic_root.is_valid())
         target_scope = spn.Scope.merge_scopes([
@@ -232,7 +291,8 @@ class TestDSPN(TestCase):
         [False, True], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],
         [False, True]))
     def test_value(self, log, inf_type, iv_inputs, varlen):
-        sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else None
+        sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else \
+            np.ones(BATCH_SIZE, dtype=np.int64) * MAX_STEPS
         sequence_lens_ph = tf.placeholder(tf.int32, [None]) if varlen else None
 
         dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn(iv_inputs=iv_inputs)
@@ -267,7 +327,7 @@ class TestDSPN(TestCase):
 
         if not log:
             dval = spn.DynamicValue(inf_type).get_value(
-                dynamic_root, sequence_lens=sequence_lens)
+                dynamic_root, sequence_lens=sequence_lens_ph)
             if varlen:
                 uval = tf.concat(
                     [spn.Value(inf_type).get_value(root) for root in unrolled_root_all], axis=0)
@@ -275,7 +335,7 @@ class TestDSPN(TestCase):
                 uval = spn.Value(inf_type).get_value(unrolled_root)
         else:
             dval = spn.DynamicLogValue(inf_type).get_value(
-                dynamic_root, sequence_lens=sequence_lens)
+                dynamic_root, sequence_lens=sequence_lens_ph)
             if varlen:
                 uval = tf.concat(
                     [spn.LogValue(inf_type).get_value(root) for root in unrolled_root_all], axis=0)
@@ -295,7 +355,8 @@ class TestDSPN(TestCase):
         [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],
         [False, True]))
     def test_mpe_path(self, log, inf_type, iv_inputs, varlen):
-        sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else None
+        sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else \
+            np.ones(BATCH_SIZE, dtype=np.int64) * MAX_STEPS
         sequence_lens_ph = tf.placeholder(tf.int32, [None]) if varlen else None
 
         dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn(iv_inputs=iv_inputs)
@@ -374,13 +435,17 @@ class TestDSPN(TestCase):
 
         for node, do, uo in zip(dynamic_var_nodes, dynamic_out, unrolled_out):
             self.assertAllClose(do, uo)
+            if iv_inputs and not varlen:
+                shape = (MAX_STEPS, BATCH_SIZE, node.num_vars, node.num_vals)
+                self.assertAllEqual(do.reshape(shape).sum(axis=-1), np.ones(shape[:-1]))
 
     @parameterized.expand(arg_product(
         [True, False], [spn.InferenceType.MARGINAL, spn.InferenceType.MPE], [True, False],
         [True, False]))
     def test_mpe_state(self, log, inf_type, iv_inputs, varlen):
         spn.conf.argmax_zero = True
-        sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else None
+        sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else \
+            np.ones(BATCH_SIZE, dtype=np.int64) * MAX_STEPS
         sequence_lens_ph = tf.placeholder(tf.int32, [None]) if varlen else None
 
         dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn(iv_inputs=iv_inputs)
@@ -483,14 +548,40 @@ class TestDSPN(TestCase):
         for do, uo in zip(mpe_ivs_val_dyn, mpe_ivs_val_unr):
             self.assertAllClose(np.squeeze(do), np.squeeze(uo))
 
-    @parameterized.expand(arg_product(
-        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True]))
-    def test_training(self, log, inf_type, iv_inputs):
-        unrolled_root, var_nodes, unrolled_weights = get_dspn_unrolled(iv_inputs=iv_inputs)
-        dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn(iv_inputs=iv_inputs)
+        if iv_inputs:
+            seq_mask = np.reshape(
+                np.expand_dims(sequence_lens, 0) > np.expand_dims(np.arange(MAX_STEPS), 1),
+                (MAX_STEPS, BATCH_SIZE, 1))[::-1]
+            for node, val, val_unr in zip(dynamic_var_nodes, mpe_ivs_val_dyn, mpe_ivs_val_unr):
+                indices = np.logical_and(seq_mask, dynamic_feed[node] != -1)
+                self.assertAllEqual(dynamic_feed[node][indices], val_unr[indices])
+                self.assertAllEqual(dynamic_feed[node][indices], val[indices])
 
-        copy_weights = tf.group(*[tf.assign(dw.variable, uw.variable) for dw, uw in
-                                  zip(dynamic_weights, unrolled_weights)])
+    @parameterized.expand(arg_product(
+        [True, False], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],
+        [False, True]))
+    def test_training(self, log, inf_type, iv_inputs, layer_nodes):
+        unrolled_root, var_nodes, unrolled_weights = get_dspn_unrolled(iv_inputs=iv_inputs)
+        if layer_nodes:
+            dynamic_root, dynamic_var_nodes, (sum_weights, mixture_weights, top_weights) = \
+                get_dspn_layer_nodes(iv_inputs=iv_inputs)
+            # [print(w.variable.shape) for w in unrolled_weights[:6]]
+            sum_weights_unrolled = tf.concat([w.variable for w in unrolled_weights[:6]],
+                                             axis=0)
+            mixture_weights_unrolled = tf.concat([w.variable for w in unrolled_weights[6:-1]],
+                                                 axis=0)
+            top_weights_unrolled = unrolled_weights[-1].variable
+            copy_weights = tf.group(
+                tf.assign(sum_weights.variable, sum_weights_unrolled),
+                tf.assign(mixture_weights.variable, mixture_weights_unrolled),
+                tf.assign(top_weights.variable, top_weights_unrolled))
+            dynamic_weights = [sum_weights.variable, mixture_weights.variable, top_weights.variable]
+            unrolled_weights = [sum_weights_unrolled, mixture_weights_unrolled, top_weights_unrolled]
+        else:
+            dynamic_root, dynamic_var_nodes, dynamic_weights = get_dspn(iv_inputs=iv_inputs)
+
+            copy_weights = tf.group(*[tf.assign(dw.variable, uw.variable) for dw, uw in
+                                      zip(dynamic_weights, unrolled_weights)])
 
         unrolled_feed, dynamic_feed = get_feed_dicts(var_nodes, dynamic_var_nodes,
                                                      iv_inputs)
@@ -528,8 +619,12 @@ class TestDSPN(TestCase):
                                                  feed_dict=unrolled_feed)
                 sess.run(update_spn_unr)
 
-                unrolled_weights_val = sess.run([w.variable for w in unrolled_weights])
-                dynamic_weights_val = sess.run([w.variable for w in dynamic_weights])
+                if not layer_nodes:
+                    unrolled_weights_val = sess.run([w.variable for w in unrolled_weights])
+                    dynamic_weights_val = sess.run([w.variable for w in dynamic_weights])
+                else:
+                    unrolled_weights_val = sess.run(unrolled_weights)
+                    dynamic_weights_val = sess.run(dynamic_weights)
 
                 sess.run([reset_acc_dyn, reset_acc_unr])
                 self.assertAllClose(likelihood_dyn_val, likelihood_unr_val)
