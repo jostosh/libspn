@@ -51,7 +51,7 @@ class EMLearning():
                                      value_inference_type=value_inference_type,
                                      add_random=add_random, use_unweighted=use_unweighted,
                                      sample=sample, sample_prob=sample_prob,
-                                     dynamic_reduce_in_loop=dynamic_reduce_in_loop,
+                                     dynamic_reduce_in_loop=False,
                                      dynamic=self._dynamic, 
                                      dropconnect_keep_prob=dropconnect_keep_prob,
                                      dropout_keep_prob=dropout_keep_prob, 
