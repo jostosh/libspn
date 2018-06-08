@@ -211,6 +211,8 @@ class MPEPath:
         """
         if sequence_lens is not None:
             time0 = root.get_maxlen() - sequence_lens
+        else:
+            time0 = 0
 
         def reduce_parents_fun_step(t, node, parent_vals):
             # Sum up all parent vals
@@ -235,6 +237,9 @@ class MPEPath:
                     # t <= maxlen - sequence_len.
                     # In that case, the part of the graph under the interface_head
                     # should be disabled (set to zero)
+                    if sequence_lens is not None:
+                        return tf.where(tf.less_equal(t, time0),
+                                        tf.zeros_like(parent_vals[0]), accumulate())
                     return tf.cond(tf.equal(t, 0),
                                    lambda: tf.zeros_like(parent_vals[0]), accumulate)
 

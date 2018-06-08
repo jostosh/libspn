@@ -50,10 +50,9 @@ class BaseSum(OpNode, abc.ABC):
     def __init__(self, *values, num_sums, weights=None, ivs=None, sum_sizes=None,
                  inference_type=InferenceType.MARGINAL, batch_axis=0, op_axis=1, reduce_axis=2,
                  masked=False, sample_prob=None, dropconnect_keep_prob=None, sample_rank_based=None,
-                 dropout_keep_prob=None, name="Sum", interface_head=False):
+                 dropout_keep_prob=None, name="Sum"):
         super().__init__(
-            inference_type=inference_type, name=name, dropout_keep_prob=dropout_keep_prob,
-            interface_head=interface_head)
+            inference_type=inference_type, name=name, dropout_keep_prob=dropout_keep_prob)
         self.set_values(*values)
         self.set_weights(weights)
         self.set_ivs(ivs)
@@ -312,9 +311,16 @@ class BaseSum(OpNode, abc.ABC):
         if weighted:
             reducible = cwise_op(reducible, w_tensor)
 
+<<<<<<< HEAD
         dropconnect_keep_prob = utils.maybe_first(
             dropconnect_keep_prob, self._dropconnect_keep_prob)
         if dropconnect_keep_prob is not None and dropconnect_keep_prob != 1.0:
+=======
+        if dropconnect_keep_prob != 1.0:
+            dropconnect_keep_prob = utils.maybe_first(
+                self._dropconnect_keep_prob, dropconnect_keep_prob)
+            if dropconnect_keep_prob is not None:
+>>>>>>> 5b4acdd34b04d6ef2612f85fdfcfc68b0c2981f3
                 if use_ivs and self._ivs:
                     self.logger.warn(
                         "Using dropconnect and latent IVs simultaneously. "
@@ -325,6 +331,10 @@ class BaseSum(OpNode, abc.ABC):
                         dropconnect_keep_prob, tf.shape(reducible), log=log)
                     reducible = cwise_op(reducible, mask)
 
+<<<<<<< HEAD
+=======
+        tf.add_to_collection("spn_reducible", reducible)
+>>>>>>> 5b4acdd34b04d6ef2612f85fdfcfc68b0c2981f3
         return reducible
 
     @utils.docinherit(OpNode)
@@ -344,16 +354,14 @@ class BaseSum(OpNode, abc.ABC):
     @utils.docinherit(OpNode)
     @utils.lru_cache
     def _compute_log_value(self, w_tensor, ivs_tensor, *value_tensors, dropconnect_keep_prob=None,
-                           dropout_keep_prob=None, custom_grad=False):
-        if not custom_grad:
-            ret = self._reduce_marginal_inference_log(self._compute_reducible(
-                w_tensor, ivs_tensor, *value_tensors, log=True, weighted=True, use_ivs=True,
-                dropconnect_keep_prob=dropconnect_keep_prob))
-            ret = self._maybe_dropout(ret, dropout_keep_prob=dropout_keep_prob, log=True)
-            return ret
+                           dropout_keep_prob=None):
 
         # Defines gradient for the log value
         def soft_gradient(grad):
+            # if dropout_keep_prob is not None or self._dropout_keep_prob is not None:
+            #     keep_prob = dropout_keep_prob or self._dropout_keep_prob
+            #     if not (isinstance(keep_prob, (int, float)) and float(keep_prob) == 1.0):
+            #         raise NotImplementedError("No gradient support for dropout.")
             scattered_grads = self._compute_log_gradient(
                 grad, w_tensor, ivs_tensor, *value_tensors, sum_weight_grads=True,
                 dropconnect_keep_prob=dropconnect_keep_prob, dropout_keep_prob=dropout_keep_prob)
@@ -475,14 +483,13 @@ class BaseSum(OpNode, abc.ABC):
             x_acc = tf.squeeze(x, axis=self._op_axis)
 
         _, _, *value_sizes = self.get_input_sizes()
-        print(self, x_acc.shape, value_sizes)
         return x_acc, tf.split(x_acc, value_sizes, axis=self._op_axis)
 
     @utils.docinherit(OpNode)
     @utils.lru_cache
     def _compute_mpe_path(self, counts, w_tensor, ivs_tensor, *value_tensors,
                           use_unweighted=False, with_ivs=True, add_random=None,
-                          sample=False, sample_prob=None, dropconnect_keep_prob=None,
+                          sample=False, sample_prob=None, dropconnect_keep_prob=False,
                           sample_rank_based=False):
         weighted = not use_unweighted or any(v.node.is_var for v in self._values)
         reducible = self._compute_reducible(w_tensor, ivs_tensor, *value_tensors, log=False,

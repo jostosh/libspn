@@ -1015,7 +1015,7 @@ class DynamicVarNode(Node, ABC):
 
     @property
     def batch_size(self):
-        return tf.shape(self._feed)[1]
+        return tf.shape(self._feed)[1 if self._time_major else 0]
 
     @property
     def max_steps(self):

@@ -200,7 +200,8 @@ class DynamicIVs(DynamicVarNode):
             :param **kwargs:
         """
         dense_ivs = self._compute_dense_array()
-        return tf.reshape(dense_ivs.read(step), (self.batch_size, self._compute_out_size()))
+        batch_size = tf.shape(self._feed)[1 if self._time_major else 0]
+        return tf.reshape(dense_ivs.read(step), (batch_size, self.get_out_size()))
 
     def _compute_mpe_state(self, counts):
         # TODO not thought about this yet

@@ -8,7 +8,7 @@ import itertools
 
 
 MAX_STEPS = 8
-BATCH_SIZE = 8
+BATCH_SIZE = 13
 
 
 def arg_product(*args):
@@ -487,26 +487,31 @@ class TestDSPN(TestCase):
         latent_dyn = dynamic_root.generate_ivs()
         dynamic_feed[latent_dyn] = latent_feed
 
-        mpe_state_gen_dynamic = spn.MPEState(log=log, dynamic=True, value_inference_type=inf_type)
+        with tf.name_scope("DynamicMPEState"):
+            mpe_state_gen_dynamic = spn.MPEState(
+                log=log, dynamic=True, value_inference_type=inf_type)
 
-        mpe_latent_dyn, *mpe_ivs_dyn = mpe_state_gen_dynamic.get_state(
-            dynamic_root, latent_dyn, *dynamic_var_nodes, sequence_lens=sequence_lens_ph)
+            mpe_latent_dyn, *mpe_ivs_dyn = mpe_state_gen_dynamic.get_state(
+                dynamic_root, latent_dyn, *dynamic_var_nodes, sequence_lens=sequence_lens_ph)
         if not varlen:
-            mpe_state_gen_unrolled = spn.MPEState(
-                log=log, dynamic=False, value_inference_type=inf_type)
-            mpe_latent_unr, *mpe_ivs_unr = mpe_state_gen_unrolled.get_state(
-                unrolled_root, latent_unr, *list(itertools.chain(*var_nodes)))
-        else:
-            mpe_ivs_unr_varlen = []
-            mpe_latent_unr_varlen = []
-            for unrolled_root, latent_node, var_nodes in zip(
-                    unrolled_root_all, latent_unr, var_nodes_all):
+            with tf.name_scope("UnrolledMPEState"):
                 mpe_state_gen_unrolled = spn.MPEState(
                     log=log, dynamic=False, value_inference_type=inf_type)
                 mpe_latent_unr, *mpe_ivs_unr = mpe_state_gen_unrolled.get_state(
-                    unrolled_root, latent_node, *list(itertools.chain(*var_nodes)))
-                mpe_latent_unr_varlen.append(mpe_latent_unr)
-                mpe_ivs_unr_varlen.append(mpe_ivs_unr)
+                    unrolled_root, latent_unr, *list(itertools.chain(*var_nodes)))
+        else:
+            mpe_ivs_unr_varlen = []
+            mpe_latent_unr_varlen = []
+
+            with tf.name_scope("UnrolledMPEState"):
+                for unrolled_root, latent_node, var_nodes in zip(
+                        unrolled_root_all, latent_unr, var_nodes_all):
+                    mpe_state_gen_unrolled = spn.MPEState(
+                        log=log, dynamic=False, value_inference_type=inf_type)
+                    mpe_latent_unr, *mpe_ivs_unr = mpe_state_gen_unrolled.get_state(
+                        unrolled_root, latent_node, *list(itertools.chain(*var_nodes)))
+                    mpe_latent_unr_varlen.append(mpe_latent_unr)
+                    mpe_ivs_unr_varlen.append(mpe_ivs_unr)
 
         with self.test_session() as sess:
             sess.run(init_dynamic)

@@ -126,7 +126,7 @@ class ProductsLayer(OpNode):
         """
         self._values = self._parse_inputs(*values)
 
-    def _parse_inputs(self, *input_likes, deduplicate=True):
+    def _parse_inputs(self, *input_likes, deduplicate=False):
         """Convert the given input_like values to Inputs and verify that the
         inputs are compatible with this node.
 
@@ -191,7 +191,7 @@ class ProductsLayer(OpNode):
 
         return tuple(inputs_unique_nodes)
 
-    def add_values(self, *values, deduplicate=True):
+    def add_values(self, *values, deduplicate=False):
         """Add more inputs providing input values to this node.
 
         Args:
@@ -324,8 +324,11 @@ class ProductsLayer(OpNode):
                               self._num_prods > 1 else True))
 
     @utils.lru_cache
-    def _compute_log_value(self, *value_tensors):
+    def _compute_log_value(self, *value_tensors, custom_grad=False):
         values = self._compute_value_common(*value_tensors, padding_value=0.0)
+        if not custom_grad:
+            return tf.reduce_sum(values, axis=-1, keep_dims=(False if self._num_prods > 1
+                                                             else True))
         @tf.custom_gradient
         def value_gradient(*unique_tensors):
             def gradient(gradients):

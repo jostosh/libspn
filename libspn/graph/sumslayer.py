@@ -102,7 +102,7 @@ class SumsLayer(BaseSum):
         self._sum_sizes = sum_sizes
         self._max_sum_size = max(sum_sizes) if sum_sizes else 0
 
-    def add_values(self, *values, deduplicate=True):
+    def add_values(self, *values, deduplicate=False):
         """Add more inputs providing input values to this node.
 
         Args:
