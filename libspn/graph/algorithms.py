@@ -430,6 +430,10 @@ def compute_graph_up_down_dynamic(root, down_fun_step, graph_input_end, graph_in
         # used in the next iteration.
         for s_ind, source in enumerate(sources):
             for inp_ind, (parent_node, parent_input_nr) in enumerate(parents[source.receiver]):
+                if down_values[parent_node][parent_input_nr] is None:
+                    raise StructureError("Did not traverse through interface head, are you sure "
+                                         "you connected it to the SPN rooted at node {}?"
+                                         .format(node.name))
                 interface_sources_prev[s_ind][inp_ind] = down_values[parent_node][parent_input_nr]
 
         # [[print(ne.shape) for ne in n] for n in interface_sources_prev]
