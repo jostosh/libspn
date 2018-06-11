@@ -256,11 +256,8 @@ class ProductsLayer(OpNode):
                               self._num_prods > 1 else True))
 
     @utils.lru_cache
-    def _compute_log_value(self, *value_tensors, custom_grad=False):
+    def _compute_log_value(self, *value_tensors):
         values = self._compute_value_common(*value_tensors, padding_value=0.0)
-        if not custom_grad:
-            return tf.reduce_sum(values, axis=-1, keep_dims=(False if self._num_prods > 1
-                                                             else True))
         @tf.custom_gradient
         def value_gradient(*unique_tensors):
             def gradient(gradients):

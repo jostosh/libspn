@@ -352,14 +352,7 @@ class BaseSum(OpNode, abc.ABC):
     @utils.docinherit(OpNode)
     @utils.lru_cache
     def _compute_log_value(self, w_tensor, ivs_tensor, *value_tensors, dropconnect_keep_prob=None,
-                           dropout_keep_prob=None, custom_grad=False):
-        if not custom_grad:
-            ret = self._reduce_marginal_inference_log(self._compute_reducible(
-                w_tensor, ivs_tensor, *value_tensors, log=True, weighted=True, use_ivs=True,
-                dropconnect_keep_prob=dropconnect_keep_prob))
-            ret = self._maybe_dropout(ret, dropout_keep_prob=dropout_keep_prob, log=True)
-            return ret
-
+                           dropout_keep_prob=None):
         # Defines gradient for the log value
         def soft_gradient(grad):
             scattered_grads = self._compute_log_gradient(
@@ -555,7 +548,7 @@ class BaseSum(OpNode, abc.ABC):
             self._reduce_marginal_inference_log(reducible),
             dropout_keep_prob=dropout_keep_prob, log=True)
         log_sum = tf.expand_dims(log_sum, axis=self._reduce_axis)
-
+        
         dropout_keep_prob = utils.maybe_first(self._dropout_keep_prob, dropout_keep_prob)
         if dropout_keep_prob is not None and not \
                 (isinstance(dropout_keep_prob, (float, int)) and float(dropout_keep_prob) == 1.0):
