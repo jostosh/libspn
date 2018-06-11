@@ -475,7 +475,6 @@ class BaseSum(OpNode, abc.ABC):
             x_acc = tf.squeeze(x, axis=self._op_axis)
 
         _, _, *value_sizes = self.get_input_sizes()
-        print(self, x_acc.shape, value_sizes)
         return x_acc, tf.split(x_acc, value_sizes, axis=self._op_axis)
 
     @utils.docinherit(OpNode)

@@ -645,11 +645,14 @@ class Node(ABC):
 class DynamicInterface(Node):
 
     def __init__(
-            self, inference_type=InferenceType.MARGINAL, name="Interface", interface_head=False):
+            self, inference_type=InferenceType.MARGINAL, name="Interface", interface_head=False,
+            source=None):
         super(DynamicInterface, self).__init__(inference_type=inference_type, name=name)
         self._source = None
         self._interface_head = interface_head
         self._scope = None
+        if source is not None:
+            self.set_source(source)
 
     @property
     def has_source(self):
@@ -659,9 +662,11 @@ class DynamicInterface(Node):
     def source(self):
         return self._source
 
-    def set_source(self, source):
+    def set_source(self, source, make_delayed_scope=True):
         source.set_receiver(self)
         self._source = source
+        if make_delayed_scope:
+            self._set_scope(source.get_scope())
 
     def _compute_scope(self, *input_scopes):
         return self._scope
@@ -680,8 +685,6 @@ class DynamicInterface(Node):
         pass
 
     def _set_scope(self, source_scope):
-        # TODO this is only temporary. Need to redesign scope checking. Would greatly benefit from
-        # knowing the 'operations' an 'Input' is involved in!
         self._scope = [Scope.merge_scopes(
             [Scope(node, "{}[t-1]".format(var_id)) for node, var_id in scope])
             for scope in source_scope]

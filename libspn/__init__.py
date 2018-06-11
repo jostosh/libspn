@@ -49,6 +49,7 @@ from libspn.generation.dense_multinodes import DenseSPNGeneratorMultiNodes
 from libspn.generation.dense_layernodes import DenseSPNGeneratorLayerNodes
 from libspn.generation.weights import WeightsGenerator
 from libspn.generation.weights import generate_weights
+from libspn.generation.dynamic import dense_dynamic_interface
 
 # Inference and learning
 from libspn.inference.type import InferenceType
@@ -133,6 +134,7 @@ __all__ = [
     # Generators
     'DenseSPNGenerator', 'DenseSPNGeneratorMultiNodes',
     'DenseSPNGeneratorLayerNodes', 'WeightsGenerator', 'generate_weights',
+    'dense_dynamic_interface',
     # Inference and learning
     'InferenceType', 'Value', 'LogValue', 'MPEPath', 'Gradient', 'MPEState',
     'EMLearning', 'GDLearning', 'LearningType', 'LearningInferenceType',

@@ -14,8 +14,57 @@ from libspn.utils.enum import Enum
 import tensorflow as tf
 from collections import OrderedDict
 import random
+from libspn.graph.basesum import BaseSum
+from libspn.graph.parsums import ParSums
+from libspn.graph.node import DynamicInterface, Input
+from libspn.graph.productslayer import ProductsLayer
+import itertools
+
 
 logger = get_logger()
+
+
+def dense_dynamic_interface(root, num_intf_mixtures):
+    if not isinstance(root, BaseSum):
+        raise TypeError("Root should be Sum, SumsLayer or ParSums instance.")
+    if len(root.values) != 1 or not isinstance(root.values[0].node, ProductsLayer):
+        raise StructureError("Root should only have a single ProductsLayer child. Now root has "
+                             "{} children of type {}.".format(len(root.values),
+                                                              [type(r.node) for r in root.values]))
+    penultimate = root.values[0].node
+    interface = DynamicInterface(name="Interface", source=penultimate)
+    interface_mixtures = ParSums(
+        interface, num_sums=num_intf_mixtures, name="DenseInterfaceMixtures", interface_head=True)
+
+    # Reconnect the ProductsLayer densely with the interface head
+    prod_sizes = penultimate.num_or_size_prods
+    new_inputs, new_prod_sizes = [], []
+
+    # The number of inputs per product
+    # TODO this seems very brittle. Probably this becomes more robust once the Operations are
+    # modeled explicitly.
+    inputs_per_prod = len(penultimate.inputs) // len(prod_sizes)
+
+    # For each interface mixtures, we connect with all products in the ProductsLayer, effectively
+    # increasing the output size from `num_prods` to `num_prods * num_intf_mixtures`
+    for j in range(num_intf_mixtures):
+        offset = 0
+        for i, size in enumerate(prod_sizes):
+            new_inputs.extend(
+                penultimate.inputs[i * inputs_per_prod:(i + 1) * inputs_per_prod])
+            new_inputs.append(Input(node=interface_mixtures, indices=j))
+            new_prod_sizes.append(size + 1)
+            offset += size
+    penultimate.set_values(*new_inputs)
+    penultimate.set_prod_sizes(new_prod_sizes)
+
+    # Set the new sizes for the interface mixtures
+    interface_mixtures._reset_sum_sizes(
+        sum_sizes=[num_intf_mixtures * len(prod_sizes)] * num_intf_mixtures)
+
+    # Reconfigure scope
+    interface._set_scope(interface.get_scope() * num_intf_mixtures)
+    return interface, interface_mixtures
 
 
 class DynamicSPNComponent:
