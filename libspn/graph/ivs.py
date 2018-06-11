@@ -100,7 +100,7 @@ class IVs(VarNode):
     def _compute_mpe_state(self, counts):
         r = tf.reshape(counts, (-1, self._num_vars, self._num_vals))
 
-        out = tf.argmax(r, dimension=2)
+        out = tf.argmax(r, axis=2)
 
         # Check whether we have a sequence dimension in input and reshape output accordingly
         if len(counts.shape) == 3:
