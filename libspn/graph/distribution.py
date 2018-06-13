@@ -132,8 +132,13 @@ class GaussianLeaf(VarNode):
 
     @utils.docinherit(VarNode)
     def _create_placeholder(self):
-        shape = ([self._max_steps] if self._dynamic else []) + [None, self._num_vars]
-        return tf.placeholder(conf.dtype, shape=shape)
+        return tf.placeholder(conf.dtype, shape=self._placeholder_shape())
+
+    def _placeholder_shape(self):
+        if self.time_major:
+            return ([self._max_steps] if self._dynamic else []) + [None, self._num_vars]
+        else:
+            return [None] + ([self._max_steps] if self._dynamic else []) + [self._num_vars]
 
     def _create_evidence_indicator(self):
         """Creates a placeholder with default value. The default value is a ``Tensor`` of shape
@@ -142,9 +147,8 @@ class GaussianLeaf(VarNode):
         Return:
             Evidence indicator placeholder: a placeholder ``Tensor`` set to True for each variable.
         """
-        shape = ([self._max_steps] if self._dynamic else []) + [None, self._num_vars]
         return tf.placeholder_with_default(
-            tf.cast(tf.ones_like(self._placeholder), tf.bool), shape=shape)
+            tf.cast(tf.ones_like(self._placeholder), tf.bool), shape=self._placeholder_shape())
 
     def attach_evidence_indicator(self, indicator):
         """Set a tensor that feeds the evidence indicators.
@@ -276,11 +280,15 @@ class GaussianLeaf(VarNode):
     def _compute_out_size(self):
         return self._num_vars * self._num_components
 
+    def _ensure_time_major(self, t):
+        return t if self.time_major else tf.transpose(t, (1, 0, 2))
+
     def _get_feed(self, step=None, maybe_unstack=True):
-        return self._maybe_unstack(self._feed, step) if maybe_unstack else self._feed
+        feed_time_major = self._ensure_time_major(self._feed)
+        return self._maybe_unstack(feed_time_major, step) if maybe_unstack else feed_time_major
 
     def _get_evidence(self, step=None):
-        return self._maybe_unstack(self._evidence_indicator, step)
+        return self._maybe_unstack(self._ensure_time_major(self._evidence_indicator), step)
 
     def _maybe_unstack(self, tensor, step):
         if self._dynamic:

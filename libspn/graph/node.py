@@ -999,8 +999,6 @@ class DynamicVarNode(Node, ABC):
     """
 
     def __init__(self, max_steps, time_major=False, feed=None, name=None):
-        if not time_major:
-            raise ValueError("DynamicIVs node does not yet support batch major")
         self._max_steps = max_steps
         self._time_major = time_major
         super().__init__(InferenceType.MARGINAL, name)
