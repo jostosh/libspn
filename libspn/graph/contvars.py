@@ -118,7 +118,7 @@ class DynamicContVars(DynamicVarNode):
             Tensor: A TF placeholder of shape ``[None, num_vars]``, where the
             first dimension corresponds to the batch size.
         """
-        return tf.placeholder(conf.dtype, [self._max_steps, None, self._num_vars])
+        return tf.placeholder(conf.dtype, self._placeholder_shape())
 
     def _compute_out_size(self):
         return self._num_vars
@@ -127,8 +127,8 @@ class DynamicContVars(DynamicVarNode):
         return [Scope(self, i) for i in range(self._num_vars)]
 
     def _compute_array(self):
-        array = tf.TensorArray(dtype=conf.dtype, size=self._max_steps).unstack(value=self._feed)
-        return array
+        feed_time_major = self._ensure_time_major(self._feed)
+        return tf.TensorArray(dtype=conf.dtype, size=self._max_steps).unstack(value=feed_time_major)
 
     def _compute_value(self, step):
         # We used identity, since this way we can feed and fetch this node

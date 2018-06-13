@@ -686,8 +686,8 @@ class DynamicInterface(Node):
 
     def _set_scope(self, source_scope):
         self._scope = [Scope.merge_scopes(
-            [Scope(node, "{}[t-1]".format(var_id)) for node, var_id in scope])
-            for scope in source_scope]
+            [Scope(node, "{}[t-1]".format(var_id) if isinstance(var_id, int) else var_id)
+             for node, var_id in scope]) for scope in source_scope]
 
     def _compute_dynamic_common(self, *input_tensors, step=None, log=False, batch_size=None):
 
@@ -1047,6 +1047,15 @@ class DynamicVarNode(Node, ABC):
     @utils.docinherit(Node)
     def _create(self):
         self._placeholder = self._create_placeholder()
+
+    def _placeholder_shape(self):
+        if self.time_major:
+            return [self._max_steps, None, self._num_vars]
+        else:
+            return [None, self._max_steps, self._num_vars]
+
+    def _ensure_time_major(self, t):
+        return t if self.time_major else tf.transpose(t, (1, 0, 2))
 
     @abstractmethod
     def _create_placeholder(self):

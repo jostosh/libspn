@@ -168,10 +168,7 @@ class DynamicIVs(DynamicVarNode):
             Tensor: An integer TF placeholder of shape ``[None, num_vars]``,
             where the first dimension corresponds to the batch size.
         """
-        if self.time_major:
-            return tf.placeholder(tf.int32, [self._max_steps, None, self._num_vars])
-        else:
-            return tf.placeholder(tf.int32, [None, self._max_steps, self._num_vars])
+        return tf.placeholder(tf.int32, self._placeholder_shape())
 
     def _compute_out_size(self):
         return self._num_vars * self._num_vals
@@ -182,7 +179,7 @@ class DynamicIVs(DynamicVarNode):
     def _compute_dense_array(self):
         # The output type has to be conf.dtype otherwise MatMul will
         # complain about being unable to mix types
-        feed_time_major = self._feed if self.time_major else tf.transpose(self._feed, (1, 0, 2))
+        feed_time_major = self._ensure_time_major(self._feed)
         oh = tf.one_hot(feed_time_major, self._num_vals, dtype=conf.dtype)
         # Detect negative input values and convert them to all IVs equal to 1
         neg = tf.expand_dims(tf.cast(tf.less(feed_time_major, 0), dtype=conf.dtype), dim=-1)
@@ -204,8 +201,7 @@ class DynamicIVs(DynamicVarNode):
             :param **kwargs:
         """
         dense_ivs = self._compute_dense_array()
-        batch_size = tf.shape(self._feed)[1 if self._time_major else 0]
-        return tf.reshape(dense_ivs.read(step), (batch_size, self.get_out_size()))
+        return tf.reshape(dense_ivs.read(step), (self.batch_size, self.get_out_size()))
 
     def _compute_mpe_state(self, counts):
         # TODO not thought about this yet
