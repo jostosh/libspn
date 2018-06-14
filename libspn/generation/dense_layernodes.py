@@ -527,6 +527,7 @@ class DenseSPNGeneratorLayerNodes:
                 # modelled in the layer node
                 num_or_size_prods = []
                 # Iterate through each node at the current depth of the SPN
+                new_input_values = []
                 for i, node in enumerate(depths[depth]):
                     if i % 10000 == 0:
                         self.__debug1("Now working on node {}/{}".format(i, len(depths[depth])))
@@ -543,7 +544,8 @@ class DenseSPNGeneratorLayerNodes:
                         prod_input_size = int(sum(input_sizes))
 
                     # Add Input values of the current node to the ProductsLayer node
-                    prods_layer.add_values(*input_values)
+                    # prods_layer.add_values(*input_values)
+                    new_input_values.extend(input_values)
 
                     # Add prod-input-size, of each product modelled in the current
                     # node, to the list
@@ -573,6 +575,7 @@ class DenseSPNGeneratorLayerNodes:
                         parent.set_values(*values)
                     # Increment num-prods-counter of the layer node
                     layer_num_prods += node_num_prods
+                prods_layer.set_values(*new_input_values)
                 # After all nodes at a certain depth are modelled into a Layer-node,
                 # set num-prods parameter accordingly
                 prods_layer.set_prod_sizes(num_or_size_prods)
