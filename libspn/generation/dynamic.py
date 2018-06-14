@@ -27,8 +27,9 @@ logger = get_logger()
 def dense_dynamic_interface(root, num_intf_mixtures):
     if not isinstance(root, BaseSum):
         raise TypeError("Root should be Sum, SumsLayer or ParSums instance.")
-    if len(root.values) != 1 or not isinstance(root.values[0].node, ProductsLayer):
-        raise StructureError("Root should only have a single ProductsLayer child. Now root has "
+    if not all(isinstance(v.node, ProductsLayer) for v in root.values) or \
+            not all(root.values[0].node == v.node for v in root.values):
+        raise StructureError("Root should only have identical ProductsLayer children. Now root has "
                              "{} children of type {}.".format(len(root.values),
                                                               [type(r.node) for r in root.values]))
     penultimate = root.values[0].node
@@ -61,6 +62,7 @@ def dense_dynamic_interface(root, num_intf_mixtures):
     # Set the new sizes for the interface mixtures
     interface_mixtures._reset_sum_sizes(
         sum_sizes=[num_intf_mixtures * len(prod_sizes)] * num_intf_mixtures)
+    root.set_values(penultimate)
 
     # Reconfigure scope
     interface._set_scope(interface.get_scope() * num_intf_mixtures)

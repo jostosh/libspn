@@ -16,7 +16,6 @@ from libspn import utils
 from libspn.graph.basesum import BaseSum
 
 
-
 class BaseValue(abc.ABC):
     """Assembles TF operations computing the values of nodes of the SPN during
     an upwards pass. The value can be either an SPN value (marginal inference)

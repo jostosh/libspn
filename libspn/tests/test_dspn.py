@@ -5,6 +5,8 @@ import tensorflow as tf
 import numpy as np
 from parameterized import parameterized, param
 import itertools
+from libspn.tests.test import argsprod
+# from libspn.generation.dense_layernodes import DenseSPNGeneratorLayerNodes
 
 
 MAX_STEPS = 8
@@ -108,7 +110,6 @@ def get_dspn(max_steps=MAX_STEPS, iv_inputs=True, time_major=True):
         mixture_z0_w, mixture_z1_w,
         mixture_in0_w, mixture_in1_w,
         top_weights]
-
 
 def get_dspn_layer_nodes(max_steps=MAX_STEPS, iv_inputs=True, time_major=True):
     tf.set_random_seed(1234)
@@ -277,8 +278,38 @@ def get_feed_dicts(var_nodes, dynamic_var_nodes, iv_inputs, varlen=False, time_m
     return unrolled_feed, dynamic_feed
 
 
+NodeType = spn.DenseSPNGeneratorLayerNodes.NodeType
+
+
 class TestDSPN(TestCase):
 
+    @argsprod([2, 3], [1, 2, 3, 4])
+    def test_dense_dynamic_interface(self, num_vars, max_steps):
+        # TODO num_vars == 1 will only work once we have the latest fix for DenseGenerator here
+        total_num_vars = num_vars * max_steps
+        ivs = spn.DynamicIVs(num_vars=num_vars, num_vals=2, max_steps=max_steps, time_major=False)
+        dense_gen = spn.DenseSPNGeneratorLayerNodes(
+            num_subsets=2, num_mixtures=2, num_decomps=1, node_type=NodeType.LAYER)
+        root = dense_gen.generate(ivs)
+        spn.dense_dynamic_interface(root, 2)
+        spn.generate_weights(root, init_value=spn.ValueType.RANDOM_UNIFORM(0.0, 1.0))
+        w_init = spn.initialize_weights(root)
+        self.setup_training(root, spn.InferenceType.MARGINAL, log=True)
+        logval = spn.DynamicLogValue(inference_type=spn.InferenceType.MARGINAL).get_value(root)
+
+        all_possibilities = np.arange(2 ** total_num_vars).reshape((2 ** total_num_vars, 1))
+        powers = 2 ** np.arange(total_num_vars).reshape((1, total_num_vars))
+        ivs_feed = np.greater(np.bitwise_and(all_possibilities, powers), 0).astype(np.int64)
+        ivs_feed = ivs_feed.reshape((-1, max_steps, num_vars))
+
+        logsum = tf.reduce_logsumexp(logval)
+
+        with self.test_session() as sess:
+            sess.run(w_init)
+            val_out = sess.run(logsum, feed_dict={ivs: ivs_feed})
+
+        self.assertAllClose(val_out, 0.0)
+        
     @parameterized.expand(arg_product([False, True]))
     def test_scope(self, layer_nodes):
         if layer_nodes:
@@ -301,7 +332,7 @@ class TestDSPN(TestCase):
 
     @parameterized.expand(arg_product(
         [False, True], [spn.InferenceType.MPE, spn.InferenceType.MARGINAL], [False, True],
-        [False, True], [False]))
+        [False, True], [False, True]))
     def test_value(self, log, inf_type, iv_inputs, varlen, time_major):
         sequence_lens = np.random.randint(1, 1 + MAX_STEPS, size=BATCH_SIZE) if varlen else \
             np.ones(BATCH_SIZE, dtype=np.int64) * MAX_STEPS
@@ -579,6 +610,9 @@ class TestDSPN(TestCase):
                 seq_mask = seq_mask.transpose((1, 0, 2))
             for node, val, val_unr in zip(dynamic_var_nodes, mpe_ivs_val_dyn, mpe_ivs_val_unr):
                 indices = np.logical_and(seq_mask, dynamic_feed[node] != -1)
+                if not time_major:
+                    val_unr = np.transpose(val_unr, (1, 0, 2))
+                    val = np.transpose(val, (1, 0, 2))
                 self.assertAllEqual(dynamic_feed[node][indices], val_unr[indices])
                 self.assertAllEqual(dynamic_feed[node][indices], val[indices])
 
