@@ -54,11 +54,11 @@ class BaseSum(OpNode, abc.ABC):
         super().__init__(
             inference_type=inference_type, name=name, dropout_keep_prob=dropout_keep_prob,
             interface_head=interface_head)
-        self.set_values(*values)
+        self._num_sums = None
+        self._sum_sizes = None
         self.set_weights(weights)
         self.set_ivs(ivs)
-
-        self._reset_sum_sizes(num_sums=num_sums, sum_sizes=sum_sizes)
+        self.set_values(*values, num_sums=num_sums, sum_sizes=sum_sizes)
 
         self._batch_axis = batch_axis
         self._op_axis = op_axis
@@ -199,7 +199,7 @@ class BaseSum(OpNode, abc.ABC):
     def sum_sizes(self):
         return self._sum_sizes
 
-    def set_values(self, *values):
+    def set_values(self, *values, reset_sum_sizes=True, sum_sizes=None, num_sums=None):
         """Set the inputs providing input values to this node. If no arguments
         are given, all existing value inputs get disconnected.
 
@@ -208,8 +208,10 @@ class BaseSum(OpNode, abc.ABC):
                 See :meth:`~libspn.Input.as_input` for possible values.
         """
         self._values = self._parse_inputs(*values)
+        if reset_sum_sizes:
+            self._reset_sum_sizes(sum_sizes=sum_sizes, num_sums=num_sums)
 
-    def add_values(self, *values):
+    def add_values(self, *values, reset_sum_sizes=True, sum_sizes=None, num_sums=None):
         """Add more inputs providing input values to this node.
 
         Args:
@@ -217,7 +219,8 @@ class BaseSum(OpNode, abc.ABC):
                 See :meth:`~libspn.Input.as_input` for possible values.
         """
         self._values += self._parse_inputs(*values)
-        self._reset_sum_sizes()
+        if reset_sum_sizes:
+            self._reset_sum_sizes(sum_sizes=sum_sizes, num_sums=num_sums)
 
     def generate_weights(self, init_value=1, trainable=True, input_sizes=None,
                          log=False, name=None):
@@ -373,7 +376,6 @@ class BaseSum(OpNode, abc.ABC):
     @utils.lru_cache
     def _maybe_dropout(self, x, dropout_keep_prob, log=True):
         dropout_keep_prob = utils.maybe_first(dropout_keep_prob, self._dropout_keep_prob)
-        # print("DROPOUT KEEP PROB", dropout_keep_prob)
         if dropout_keep_prob is None or isinstance(dropout_keep_prob, (float, int)) \
                 and float(dropout_keep_prob) == 1.0:
             return x
