@@ -14,6 +14,7 @@ from libspn.graph.sumslayer import SumsLayer
 from libspn.graph.product import Product
 from libspn.graph.permproducts import PermProducts
 from libspn.graph.productslayer import ProductsLayer
+from libspn.graph.convsum import ConvSum
 from libspn.graph.algorithms import traverse_graph
 from libspn.log import get_logger
 from libspn.exceptions import StructureError
@@ -23,7 +24,6 @@ from itertools import chain, product
 import tensorflow as tf
 import numpy as np
 import random
-import time
 
 
 class DenseSPNGeneratorLayerNodes:
@@ -425,7 +425,7 @@ class DenseSPNGeneratorLayerNodes:
                     if (i and  # Input not empty
                             not(i.is_param or i.is_var or i.is_dynamic_var
                                 or i.is_dynamic_interface
-                                or isinstance(i.node, (SumsLayer, ProductsLayer)))):
+                                or isinstance(i.node, (SumsLayer, ProductsLayer, ConvSum)))):
                         parents[i.node].append(node)
                         node_to_depth[i.node] = node_to_depth[node] + 1
 
@@ -460,7 +460,6 @@ class DenseSPNGeneratorLayerNodes:
 
         # Iterate through each depth of the SPN, starting from the deepest layer,
         # moving up to the root node
-
         for depth in range(spn_depth, 1, -1):
             self.__debug1("Converting to layer nodes at depth {}".format(depth))
             if all(isinstance(node, (Sum, ParSums)) for node in depths[depth]):  # A Sums Layer

@@ -25,6 +25,7 @@ from libspn.graph.sum import Sum
 from libspn.graph.parsums import ParSums
 from libspn.graph.sums import Sums
 from libspn.graph.sumslayer import SumsLayer
+from libspn.graph.convsum import ConvSum
 from libspn.graph.product import Product
 from libspn.graph.permproducts import PermProducts
 from libspn.graph.products import Products
@@ -122,7 +123,7 @@ __all__ = [
     # Graph
     'Scope', 'Input', 'Node', 'ParamNode', 'OpNode', 'VarNode',
     'Concat', 'IVs', 'ContVars',
-    'Sum', 'ParSums', 'Sums', 'SumsLayer',
+    'Sum', 'ParSums', 'Sums', 'SumsLayer', 'ConvSum',
     'Product', 'PermProducts', 'Products', 'ProductsLayer',
     'GaussianLeaf',
     'DynamicIVs', 'DynamicVarNode', 'DynamicContVars',
