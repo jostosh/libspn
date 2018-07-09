@@ -26,10 +26,13 @@ from libspn.graph.parsums import ParSums
 from libspn.graph.sums import Sums
 from libspn.graph.sumslayer import SumsLayer
 from libspn.graph.convsum import ConvSum
+from libspn.graph.localsum import LocalSum
 from libspn.graph.product import Product
 from libspn.graph.permproducts import PermProducts
 from libspn.graph.products import Products
 from libspn.graph.productslayer import ProductsLayer
+from libspn.graph.convprod2d import ConvProd2D, ConvProd2DV2
+from libspn.graph.stridedslice import StridedSlice2D
 from libspn.graph.weights import Weights
 from libspn.graph.weights import assign_weights
 from libspn.graph.weights import initialize_weights
@@ -124,7 +127,7 @@ __all__ = [
     'Scope', 'Input', 'Node', 'ParamNode', 'OpNode', 'VarNode',
     'Concat', 'IVs', 'ContVars',
     'Sum', 'ParSums', 'Sums', 'SumsLayer', 'ConvSum',
-    'Product', 'PermProducts', 'Products', 'ProductsLayer',
+    'Product', 'PermProducts', 'Products', 'ProductsLayer', 'ConvProd2D', 'ConvProd2DV2',
     'GaussianLeaf',
     'DynamicIVs', 'DynamicVarNode', 'DynamicContVars',
     'Weights', 'assign_weights', 'initialize_weights',

@@ -7,14 +7,18 @@
 
 from collections import deque
 from libspn import utils
+from libspn.graph.convprod2d import ConvProd2D
 from libspn.graph.node import Input
 from libspn.graph.sum import Sum
+from libspn.graph.stridedslice import StridedSlice2D
 from libspn.graph.parsums import ParSums
 from libspn.graph.sumslayer import SumsLayer
 from libspn.graph.product import Product
 from libspn.graph.permproducts import PermProducts
 from libspn.graph.productslayer import ProductsLayer
+from libspn.graph.concat import Concat
 from libspn.graph.convsum import ConvSum
+from libspn.graph.localsum import LocalSum
 from libspn.graph.algorithms import traverse_graph
 from libspn.log import get_logger
 from libspn.exceptions import StructureError
@@ -424,8 +428,10 @@ class DenseSPNGeneratorLayerNodes:
                 for i in node.inputs:
                     if (i and  # Input not empty
                             not(i.is_param or i.is_var or i.is_dynamic_var
-                                or i.is_dynamic_interface
-                                or isinstance(i.node, (SumsLayer, ProductsLayer, ConvSum)))):
+                                or i.is_dynamic_interface or
+                                isinstance(i.node, (SumsLayer, ProductsLayer, ConvSum,
+                                                    ConvProd2D, Concat, LocalSum,
+                                                    StridedSlice2D)))):
                         parents[i.node].append(node)
                         node_to_depth[i.node] = node_to_depth[node] + 1
 

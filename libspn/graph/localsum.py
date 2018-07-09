@@ -17,7 +17,7 @@ from libspn.graph.node import OpNode
 
 
 @utils.register_serializable
-class ConvSum(BaseSum):
+class LocalSum(BaseSum):
     """A container representing convolutional sums (which share the same input) in an SPN.
 
     Args:
@@ -42,7 +42,7 @@ class ConvSum(BaseSum):
     """
 
     def __init__(self, *values, num_channels=1, weights=None, ivs=None,
-                 inference_type=InferenceType.MARGINAL, name="ConvSums",
+                 inference_type=InferenceType.MARGINAL, name="LocalSum",
                  grid_dim_sizes=None):
 
         if not grid_dim_sizes:
@@ -53,16 +53,18 @@ class ConvSum(BaseSum):
         self._grid_dim_sizes = list(grid_dim_sizes) if isinstance(grid_dim_sizes, tuple) \
             else grid_dim_sizes
         self._channel_axis = 3
+        self._num_channels = num_channels
+        num_sums = int(np.prod(self._grid_dim_sizes) * num_channels)
         super().__init__(
-            *values, num_sums=num_channels, weights=weights, ivs=ivs,
+            *values, num_sums=num_sums, weights=weights, ivs=ivs,
             inference_type=inference_type, name=name, reduce_axis=4, op_axis=[1, 2])
 
     @utils.docinherit(BaseSum)
     @utils.lru_cache
     def _prepare_component_wise_processing(
             self, w_tensor, ivs_tensor, *input_tensors, zero_prob_val=0.0):
-        shape_suffix = [self._num_sums, self._max_sum_size]
-        w_tensor = tf.reshape(w_tensor, [1] * 3 + shape_suffix)
+        shape_suffix = [self._num_channels, self._max_sum_size]
+        w_tensor = tf.reshape(w_tensor, [1] + self._grid_dim_sizes + shape_suffix)
 
         input_tensors = [self._spatial_reshape(t) for t in input_tensors]
 
@@ -75,7 +77,7 @@ class ConvSum(BaseSum):
 
     @property
     def output_shape_spatial(self):
-        return tuple(self._grid_dim_sizes + [self.num_sums])
+        return tuple(self._grid_dim_sizes + [self._num_channels])
 
     def generate_weights(self, init_value=1, trainable=True, input_sizes=None,
                          log=False, name=None):
@@ -156,17 +158,21 @@ class ConvSum(BaseSum):
     @utils.docinherit(BaseSum)
     def _get_sum_sizes(self, num_sums):
         num_values = sum(self._get_input_num_channels())  # Skip ivs, weights
-        return num_sums * int(np.prod(self._grid_dim_sizes)) * [num_values]
+        return num_sums * [num_values]
 
     @utils.docinherit(BaseSum)
     def _compute_out_size(self, *input_out_sizes):
-        return int(np.prod(self._grid_dim_sizes) * self._num_sums)
+        return self._num_sums
+
+    @property
+    def _tile_unweighted_size(self):
+        return self._num_channels
 
     @utils.lru_cache
     @utils.docinherit(BaseSum)
     def _compute_value(self, w_tensor, ivs_tensor, *input_tensors,
                            dropconnect_keep_prob=None, dropout_keep_prob=None):
-        val = super(ConvSum, self)._compute_value(
+        val = super(LocalSum, self)._compute_value(
             w_tensor, ivs_tensor, *input_tensors, dropconnect_keep_prob=dropconnect_keep_prob,
             dropout_keep_prob=dropout_keep_prob)
         return tf.reshape(val, (-1, self._compute_out_size()))
@@ -175,7 +181,7 @@ class ConvSum(BaseSum):
     @utils.docinherit(BaseSum)
     def _compute_log_value(self, w_tensor, ivs_tensor, *input_tensors,
                            dropconnect_keep_prob=None, dropout_keep_prob=None):
-        val = super(ConvSum, self)._compute_log_value(
+        val = super(LocalSum, self)._compute_log_value(
             w_tensor, ivs_tensor, *input_tensors, dropconnect_keep_prob=dropconnect_keep_prob,
             dropout_keep_prob=dropout_keep_prob)
         return tf.reshape(val, (-1, self._compute_out_size()))
@@ -184,7 +190,7 @@ class ConvSum(BaseSum):
     @utils.docinherit(BaseSum)
     def _compute_mpe_value(self, w_tensor, ivs_tensor, *input_tensors,
                            dropconnect_keep_prob=None, dropout_keep_prob=None):
-        val = super(ConvSum, self)._compute_mpe_value(
+        val = super(LocalSum, self)._compute_mpe_value(
             w_tensor, ivs_tensor, *input_tensors, dropconnect_keep_prob=dropconnect_keep_prob,
             dropout_keep_prob=dropout_keep_prob)
         return tf.reshape(val, (-1, self._compute_out_size()))
@@ -193,7 +199,7 @@ class ConvSum(BaseSum):
     @utils.docinherit(BaseSum)
     def _compute_log_mpe_value(self, w_tensor, ivs_tensor, *input_tensors,
                            dropconnect_keep_prob=None, dropout_keep_prob=None):
-        val = super(ConvSum, self)._compute_log_mpe_value(
+        val = super(LocalSum, self)._compute_log_mpe_value(
             w_tensor, ivs_tensor, *input_tensors, dropconnect_keep_prob=dropconnect_keep_prob,
             dropout_keep_prob=dropout_keep_prob)
         return tf.reshape(val, (-1, self._compute_out_size()))
@@ -242,7 +248,8 @@ class ConvSum(BaseSum):
     @utils.docinherit(BaseSum)
     def _accumulate_and_split_to_children(self, x, *input_tensors):
         x = self._spatial_reshape(x, forward=False)
-        x_acc_op = tf.reduce_sum(x, axis=self._op_axis)
+        # x_acc_op = tf.reduce_sum(x, axis=self._op_axis)
+        x_acc_op = tf.reshape(x, (-1, int(np.prod(self.output_shape_spatial)), self._max_sum_size))
         x_acc_channel_split = tf.split(
             tf.reduce_sum(x, axis=self._channel_axis),
             num_or_size_splits=self._get_input_num_channels(), axis=self._channel_axis)
@@ -275,20 +282,25 @@ class ConvSum(BaseSum):
         raise NotImplementedError("{}: No log-gradient implementation available.".format(self))
 
     @utils.docinherit(OpNode)
-    def _compute_scope(self, weight_scopes, ivs_scopes, *value_scopes):
+    def _compute_scope(self, weight_scopes, ivs_scopes, *value_scopes, check_valid=False):
         flat_value_scopes, ivs_scopes, *value_scopes = self._get_flat_value_scopes(
             weight_scopes, ivs_scopes, *value_scopes)
 
         value_scopes_grid = [
             np.asarray(vs).reshape(self._grid_dim_sizes + [-1]) for vs in value_scopes]
         value_scopes_concat = np.concatenate(value_scopes_grid, axis=2)
+        
+        if check_valid:
+            for scope_list in value_scopes_concat.reshape((-1, self._max_sum_size)):
+                if any(s != scope_list[0] for s in scope_list[1:]):
+                    return None
+        
         if self._ivs:
             raise NotImplementedError("{}: no support for computing scope when node has latent IVs."
                                       .format(self))
-        return list(map(Scope.merge_scopes, value_scopes_concat.repeat(self._num_sums).reshape(
+        return list(map(Scope.merge_scopes, value_scopes_concat.repeat(self._num_channels).reshape(
             (-1, self._max_sum_size))))
 
     @utils.docinherit(OpNode)
     def _compute_valid(self, weight_scopes, ivs_scopes, *value_scopes):
-        self.logger.warn("{}: validity is skipped for convolutional sum layer.".format(self))
-        return self._compute_scope(weight_scopes, ivs_scopes, *value_scopes)
+        return self._compute_scope(weight_scopes, ivs_scopes, *value_scopes, check_valid=True)
