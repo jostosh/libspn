@@ -13,6 +13,9 @@ import collections
 from libspn import conf
 from libspn.ops import ops
 from libspn.utils.serialization import register_serializable
+from tensorflow.python.framework import ops as tfops
+from tensorflow.python.ops import array_ops
+from libspn.utils.lrucache import lru_cache
 
 
 class ValueType:
@@ -45,6 +48,113 @@ class ValueType:
         def deserialize(self, data):
             self.min_val = data['min_val']
             self.max_val = data['max_val']
+
+
+def one_hot_conv2d(input, filter, strides=(1, 1), dilations=(1, 1), padding="VALID",
+                   name=None):
+    if padding != "VALID":
+        raise NotImplementedError("Currently only supports padding == VALID")
+    with tf.name_scope(name, "one_hot_conv2d", [input, filter]):
+        input = tf.convert_to_tensor(input, name="input")
+        filter = tf.convert_to_tensor(filter, name="filter")
+        # Check input dims
+        if len(input.shape) != 4:
+            raise ValueError("Input rank must be 4")
+        if len(filter.shape) != 3:
+            raise ValueError("Filter rank must be 3")
+
+        return ops.one_hot_conv2d(input, filter, strides=strides, dilations=dilations)
+
+
+def one_hot_conv2d_backprop(input, filter, grad, strides=(1, 1), dilations=(1, 1),
+                            padding="VALID", name=None):
+    # TODO should be a way to only specify the input shape...
+    if padding != "VALID":
+        raise NotImplementedError("Currently only supports padding == VALID")
+    with tf.name_scope(name, "one_hot_conv2d_backprop", [input, filter]):
+        input = tf.convert_to_tensor(input, name="input")
+        filter = tf.convert_to_tensor(filter, name="filter")
+        # Check input dims
+        if len(input.shape) != 4:
+            raise ValueError("Input rank must be 4")
+        if len(filter.shape) != 3:
+            raise ValueError("Filter rank must be 3")
+
+        return ops.one_hot_conv2d_backprop(
+            input, filter, grad, strides=strides, dilations=dilations)
+
+
+@tfops.RegisterGradient("OneHotConv2D")
+def _OneHotConv2DGrad(op, grad):
+  dilations = op.get_attr("dilations")
+  strides = op.get_attr("strides")
+  return [
+      ops.one_hot_conv2d_backprop(
+          op.inputs[0],
+          op.inputs[1],
+          grad,
+          dilations=dilations,
+          strides=strides),
+      None
+  ]
+
+
+def logmatmul(a, b, transpose_a=False, transpose_b=False, name=None):
+    
+    with tf.name_scope(name, "logmatmul", [a, b]):
+        reduce_axis_a = 0 if transpose_a else 1
+        reduce_axis_b = 1 if transpose_b else 0
+    
+        max_a = replace_infs_with_zeros(
+            tf.stop_gradient(tf.reduce_max(a, axis=reduce_axis_a, keepdims=True)))
+    
+        max_b = replace_infs_with_zeros(
+            tf.stop_gradient(tf.reduce_max(b, axis=reduce_axis_b, keepdims=True)))
+        
+        a -= max_a
+        b -= max_b
+        
+        out = tf.log(tf.matmul(
+            tf.exp(a), tf.exp(b), transpose_a=transpose_a, transpose_b=transpose_b))
+        out += max_a + max_b
+    return out
+        
+        
+def replace_infs_with_zeros(x):
+    return tf.where(tf.is_inf(x), tf.zeros_like(x), x)
+
+
+def maybe_random_0toN_permutations(range_sizes, max_size):
+    total_possibilities = int(np.prod(range_sizes))
+    if total_possibilities > max_size:
+        if total_possibilities < 1e6:
+            r = np.random.choice(total_possibilities, size=max_size, replace=False)
+        else:
+            r = np.random.randint(total_possibilities, size=max_size)
+    else:
+        r = np.arange(total_possibilities)
+    indices = []
+    for s in range_sizes:
+        indices.append(r % s)
+        r //= s
+    return np.stack(indices, axis=1)
+
+
+def pow2_combinations(n):
+    rows = 2 ** n
+    pow2 = np.power(2, np.arange(n)).reshape(1, n)
+    return np.greater(np.bitwise_and(
+        np.arange(rows).reshape(rows, 1), pow2), 0)
+
+
+@lru_cache
+def transpose_channel_last_to_first(t):
+    return tf.transpose(t, (0, 3, 1, 2))
+
+
+@lru_cache
+def transpose_channel_first_to_last(t):
+    return tf.transpose(t, (0, 2, 3, 1))
 
 
 def gather_cols(params, indices, name=None):
@@ -589,3 +699,15 @@ def split_maybe(value, split_sizes, axis, name='split'):
 
 def print_tensor(*tensors):
     return tf.Print(tensors[0], tensors)
+
+
+def non_batch_dim_prod(t):
+    """Computes the product of the non-batch dimensions to be used for reshaping purposes.
+
+    Args:
+        t (Tensor): A ``Tensor`` for which to compute the product.
+
+    Returns:
+        An ``int``: product of non-batch dimensions.
+    """
+    return int(np.prod(t.shape.as_list()[1:]))
