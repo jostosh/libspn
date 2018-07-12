@@ -434,8 +434,13 @@ class Node(ABC):
             list of Scope: A list of length ``out_size`` containing scopes of
                            each output of this node.
         """
-        return compute_graph_up(self, (lambda node, *args:
-                                       node._compute_scope(*args)))
+        def show_scopes(node, *args):
+            if len(args) > 0:
+                print(node, [len(a) for a in args if a is not None])
+            return node._compute_scope(*args)
+        return compute_graph_up(self, show_scopes)
+        # return compute_graph_up(self, (lambda node, *args:
+        #                                node._compute_scope(*args)))
 
     def is_valid(self):
         """Check if the SPN rooted in this node is complete and decomposable.

@@ -18,7 +18,12 @@ from libspn.graph.basesum import BaseSum
 from libspn.graph.parsums import ParSums
 from libspn.graph.node import DynamicInterface, Input
 from libspn.graph.productslayer import ProductsLayer
+from libspn.graph.localsum import LocalSum
+from libspn.graph.convsum import ConvSum
+from libspn.graph.spatialpermproducts import SpatialPermProducts
+from libspn.graph.convprod2d import ConvProd2D
 import itertools
+from libspn.generation.spatial import ConvSPN
 
 
 logger = get_logger()
@@ -67,6 +72,98 @@ def dense_dynamic_interface(root, num_intf_mixtures):
     # Reconfigure scope
     interface._set_scope(interface.get_scope() * num_intf_mixtures)
     return interface, interface_mixtures
+
+
+def conv_dyn_lattice(
+        dynamic_vars, spatial_dims, num_sums_wicker, num_sums_interface, num_prods_wicker,
+        num_prods_interface, dense_gen):
+    conv_spn = ConvSPN()
+    # TODO USE NORMAL STACK INSTEAD, OR DEAL WITH PADDING!
+    conv_spn.add_stack(
+        dynamic_vars, sum_num_channels=num_sums_wicker, spatial_dims=spatial_dims,
+        prod_num_channels=num_prods_wicker, stack_size=4)
+    
+    child_temporal_prod = None
+    root_prods = []
+    for template_node in conv_spn.prod_nodes:
+        # Auxiliary mixtures connected to the product at this level
+        template_mixture = LocalSum(
+            template_node, num_channels=num_sums_interface,
+            grid_dim_sizes=template_node.output_shape_spatial[:2],
+            name="TemplateMixture")
+        spatial_dims = template_mixture.output_shape_spatial[:2]
+        
+        # Temporal products, combining information from previous time steps and current time step
+        # locally
+        temporal_prod = SpatialPermProducts(
+            template_mixture, template_mixture, grid_dim_sizes=spatial_dims, name="TemporalProd")
+        
+        # Interface node that takes the output of the temporal product at the previous time step
+        interface = DynamicInterface(source=temporal_prod)
+        
+        # Mixtures on top of the interface node
+        interface_mixture = LocalSum(interface, interface_head=True, name="InterfaceMixture",
+                                     num_channels=num_sums_interface, grid_dim_sizes=spatial_dims)
+        
+        # Reconfigure the temporal product input nodes
+        # TODO this is still something to improve!
+        temporal_prod.set_values(template_mixture, interface_mixture)
+    
+        if child_temporal_prod is not None:
+            spatial_dims = child_temporal_prod.output_shape_spatial[:2]
+            # TODO take over the properties of current prod_node
+            parent_prod = ConvProd2D(
+                child_temporal_prod, num_channels=num_prods_interface, grid_dim_sizes=spatial_dims,
+                name="ParentProduct")
+            spatial_dims = parent_prod.output_shape_spatial[:2]
+            cross_mixture = LocalSum(
+                parent_prod, temporal_prod, num_channels=num_sums_interface,
+                grid_dim_sizes=spatial_dims, name="CrossMixture")
+            dense_root = dense_gen.generate(cross_mixture)
+            root_prods.append(dense_root.values[0].node)
+            
+        child_temporal_prod = temporal_prod
+
+    # template_mixtures = [LocalSum(
+    #     template_node, num_channels=num_sums_interface,
+    #     grid_dim_sizes=template_node.output_shape_spatial[:2],
+    #     name="TemplateMixture") for template_node in prod_nodes]
+    # interface_permprods = []
+    # interface_nodes = []
+    # interface_mixtures = []
+    # 
+    # for template_mix in template_mixtures:
+    #     spatial_dims = template_mix.output_shape_spatial[:2]
+    #     permprod = SpatialPermProducts(
+    #         template_mix, template_mix, grid_dim_sizes=spatial_dims,
+    #         name="LocalTemporalProd")
+    #     interface = DynamicInterface(source=permprod)
+    #     interface_mixture = LocalSum(
+    #         interface, num_channels=num_sums_interface,
+    #         grid_dim_sizes=spatial_dims, interface_head=True, name="InterfaceMixture")
+    #     permprod.set_values(template_mix, interface_mixture)
+    #     interface_nodes.append(interface)
+    #     interface_permprods.append(permprod)
+    #     interface_mixtures.append(interface_mixtures)
+    # 
+    # interface_l0_2x2 = interface_permprods[0]
+    # level_heads = []
+    # dense_prods = []
+    # for interface_l1_1x1 in interface_permprods[1:]:
+    #     spatial_dims = interface_l0_2x2.output_shape_spatial[:2]
+    #     interface_l0_1x1 = ConvProd2D(
+    #         interface_l0_2x2, num_channels=num_prods_interface, grid_dim_sizes=spatial_dims)
+    #     spatial_dims = interface_l0_1x1.output_shape_spatial[:2]
+    #     interface_l0_2x2 = LocalSum(
+    #         interface_l0_1x1, interface_l1_1x1, num_channels=num_sums_interface,
+    #         grid_dim_sizes=spatial_dims, name="MergeLevelMixture")
+    #     dense_root = dense_gen.generate(interface_l0_2x2)
+    #     level_heads.append(interface_l0_2x2)
+    #     dense_prods.append(dense_root.values[0].node)
+
+    root = Sum(*root_prods, name="Root")
+
+    return root
 
 
 class DynamicSPNComponent:

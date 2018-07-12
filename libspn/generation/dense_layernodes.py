@@ -428,10 +428,8 @@ class DenseSPNGeneratorLayerNodes:
                 for i in node.inputs:
                     if (i and  # Input not empty
                             not(i.is_param or i.is_var or i.is_dynamic_var
-                                or i.is_dynamic_interface or
-                                isinstance(i.node, (SumsLayer, ProductsLayer, ConvSum,
-                                                    ConvProd2D, Concat, LocalSum,
-                                                    StridedSlice2D)))):
+                                or i.is_dynamic_interface or not
+                                isinstance(i.node, (Sum, ParSums, Product, PermProducts)))):
                         parents[i.node].append(node)
                         node_to_depth[i.node] = node_to_depth[node] + 1
 

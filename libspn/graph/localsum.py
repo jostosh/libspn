@@ -44,7 +44,7 @@ class LocalSum(BaseSum):
 
     def __init__(self, *values, num_channels=1, weights=None, ivs=None,
                  inference_type=InferenceType.MARGINAL, name="LocalSum",
-                 grid_dim_sizes=None):
+                 grid_dim_sizes=None, interface_head=False):
 
         if not grid_dim_sizes:
             raise NotImplementedError(
@@ -58,7 +58,8 @@ class LocalSum(BaseSum):
         num_sums = int(np.prod(self._grid_dim_sizes) * num_channels)
         super().__init__(
             *values, num_sums=num_sums, weights=weights, ivs=ivs,
-            inference_type=inference_type, name=name, reduce_axis=4, op_axis=[1, 2])
+            inference_type=inference_type, name=name, reduce_axis=4, op_axis=[1, 2],
+            interface_head=interface_head)
 
     @utils.docinherit(BaseSum)
     @utils.lru_cache
@@ -271,8 +272,6 @@ class LocalSum(BaseSum):
 
     @utils.docinherit(OpNode)
     def _compute_scope(self, weight_scopes, ivs_scopes, *value_scopes, check_valid=False):
-        flat_value_scopes, ivs_scopes, *value_scopes = self._get_flat_value_scopes(
-            weight_scopes, ivs_scopes, *value_scopes)
 
         value_scopes_grid = [
             np.asarray(vs).reshape(self._grid_dim_sizes + [-1]) for vs in value_scopes]
