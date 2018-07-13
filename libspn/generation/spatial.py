@@ -89,6 +89,8 @@ class ConvSPN:
         def none_to_zero(x):
             return 0 if x is None else x
 
+        strides = [strides] * stack_size if isinstance(strides, int) else strides
+
         strides_cum_prod = np.cumprod(np.concatenate(([1], strides[:-1])))
         for pad_l, pad_r, pad_t, pad_b, s_prod, level in self._ensure_tuples_and_zip(
                 pad_left, pad_right, pad_bottom, pad_top, strides_cum_prod.tolist(),
