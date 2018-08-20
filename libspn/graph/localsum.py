@@ -272,6 +272,8 @@ class LocalSum(BaseSum):
 
     @utils.docinherit(OpNode)
     def _compute_scope(self, weight_scopes, ivs_scopes, *value_scopes, check_valid=False):
+        # flat_value_scopes, ivs_scopes, *value_scopes = self._get_flat_value_scopes(
+        #     weight_scopes, ivs_scopes, *value_scopes)
 
         value_scopes_grid = [
             np.asarray(vs).reshape(self._grid_dim_sizes + [-1]) for vs in value_scopes]
@@ -280,6 +282,7 @@ class LocalSum(BaseSum):
         if check_valid:
             for scope_list in value_scopes_concat.reshape((-1, self._max_sum_size)):
                 if any(s != scope_list[0] for s in scope_list[1:]):
+                    self.logger.warn("{}: not complete.".format(self))
                     return None
         
         if self._ivs:
