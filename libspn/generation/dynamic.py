@@ -112,8 +112,11 @@ def conv_dyn_lattice(
         if child_temporal_prod is not None:
             spatial_dims = child_temporal_prod.output_shape_spatial[:2]
             # TODO take over the properties of current prod_node
+            temporal_mixture = LocalSum(
+                child_temporal_prod, num_channels=num_sums_interface, grid_dim_sizes=spatial_dims,
+                name="TemporalMixture")
             parent_prod = ConvProd2D(
-                child_temporal_prod, num_channels=num_prods_interface, grid_dim_sizes=spatial_dims,
+                temporal_mixture, num_channels=num_prods_interface, grid_dim_sizes=spatial_dims,
                 name="ParentProduct")
             spatial_dims = parent_prod.output_shape_spatial[:2]
             cross_mixture = LocalSum(
@@ -124,43 +127,76 @@ def conv_dyn_lattice(
             
         child_temporal_prod = temporal_prod
 
-    # template_mixtures = [LocalSum(
-    #     template_node, num_channels=num_sums_interface,
-    #     grid_dim_sizes=template_node.output_shape_spatial[:2],
-    #     name="TemplateMixture") for template_node in prod_nodes]
-    # interface_permprods = []
-    # interface_nodes = []
-    # interface_mixtures = []
-    # 
-    # for template_mix in template_mixtures:
-    #     spatial_dims = template_mix.output_shape_spatial[:2]
-    #     permprod = SpatialPermProducts(
-    #         template_mix, template_mix, grid_dim_sizes=spatial_dims,
-    #         name="LocalTemporalProd")
-    #     interface = DynamicInterface(source=permprod)
-    #     interface_mixture = LocalSum(
-    #         interface, num_channels=num_sums_interface,
-    #         grid_dim_sizes=spatial_dims, interface_head=True, name="InterfaceMixture")
-    #     permprod.set_values(template_mix, interface_mixture)
-    #     interface_nodes.append(interface)
-    #     interface_permprods.append(permprod)
-    #     interface_mixtures.append(interface_mixtures)
-    # 
-    # interface_l0_2x2 = interface_permprods[0]
-    # level_heads = []
-    # dense_prods = []
-    # for interface_l1_1x1 in interface_permprods[1:]:
-    #     spatial_dims = interface_l0_2x2.output_shape_spatial[:2]
-    #     interface_l0_1x1 = ConvProd2D(
-    #         interface_l0_2x2, num_channels=num_prods_interface, grid_dim_sizes=spatial_dims)
-    #     spatial_dims = interface_l0_1x1.output_shape_spatial[:2]
-    #     interface_l0_2x2 = LocalSum(
-    #         interface_l0_1x1, interface_l1_1x1, num_channels=num_sums_interface,
-    #         grid_dim_sizes=spatial_dims, name="MergeLevelMixture")
-    #     dense_root = dense_gen.generate(interface_l0_2x2)
-    #     level_heads.append(interface_l0_2x2)
-    #     dense_prods.append(dense_root.values[0].node)
+    root = Sum(*root_prods, name="Root")
 
+    return root
+
+
+def dynamic_wicker(
+        conv_spn, spatial_dims, num_sums_wicker, num_sums_interface, num_prods_wicker,
+        num_prods_interface, dense_gen):
+    aux_conv_spn = ConvSPN()
+
+    child_temporal_prod = None
+    root_prods = []
+    prod_nodes = conv_spn.prod_nodes
+    for i, template_node in enumerate(conv_spn.prod_nodes):
+        # Auxiliary mixtures connected to the product at this level
+        template_mixture = LocalSum(
+            template_node, num_channels=num_sums_interface,
+            grid_dim_sizes=template_node.output_shape_spatial[:2],
+            name="TemplateMixture")
+        spatial_dims = template_mixture.output_shape_spatial[:2]
+
+        # Temporal products, combining information from previous time steps and current time step
+        # locally
+        temporal_prod = SpatialPermProducts(
+            template_mixture, template_mixture, grid_dim_sizes=spatial_dims, name="TemporalProd")
+
+        # Interface node that takes the output of the temporal product at the previous time step
+        interface = DynamicInterface(source=temporal_prod)
+
+        # Mixtures on top of the interface node
+        interface_mixture = LocalSum(interface, interface_head=True, name="InterfaceMixture",
+                                     num_channels=num_sums_interface, grid_dim_sizes=spatial_dims)
+
+        # Reconfigure the temporal product input nodes
+        # TODO this is still something to improve!
+        temporal_prod.set_values(template_mixture, interface_mixture)
+
+        if child_temporal_prod is not None:
+            spatial_dims = child_temporal_prod.output_shape_spatial[:2]
+            # TODO take over the properties of current prod_node
+            temporal_mixture = LocalSum(
+                child_temporal_prod, num_channels=num_sums_interface, grid_dim_sizes=spatial_dims,
+                name="TemporalMixture")
+            parent_prod = ConvProd2D(
+                temporal_mixture, num_channels=num_prods_interface, grid_dim_sizes=spatial_dims,
+                strides=template_node._strides, dilation_rate=template_node._dilation_rate,
+                pad_left=template_node._pad_left, pad_right=template_node._pad_right,
+                pad_top=template_node._pad_top, pad_bottom=template_node._pad_bottom,
+                name="ParentProduct")
+            spatial_dims = parent_prod.output_shape_spatial[:2]
+            cross_mixture = LocalSum(
+                parent_prod, temporal_prod, num_channels = num_sums_interface,
+                grid_dim_sizes = spatial_dims, name = "CrossMixture")
+
+            pad_left = [node._pad_left for node in prod_nodes[i + 1:]]
+            pad_right = [node._pad_right for node in prod_nodes[i + 1:]]
+            pad_top = [node._pad_top for node in prod_nodes[i + 1:]]
+            pad_bottom = [node._pad_bottom for node in prod_nodes[i + 1:]]
+
+            dilation_rate = [node._dilation_rate for node in prod_nodes[i + 1:]]
+            strides = [node._strides for node in prod_nodes[i + 1:]]
+
+            print("Adding stack of size", len(prod_nodes) - (i + 1))
+            sub_root = aux_conv_spn.add_stack(
+                cross_mixture, spatial_dims=cross_mixture.output_shape_spatial[:2],
+                pad_left=pad_left, pad_right=pad_right, pad_top=pad_top, pad_bottom=pad_bottom,
+                dilation_rate=dilation_rate, strides=strides, stack_size=len(prod_nodes) - (i + 1))
+            root_prods.append(sub_root)
+
+        child_temporal_prod = temporal_prod
     root = Sum(*root_prods, name="Root")
 
     return root
