@@ -30,7 +30,7 @@ def full_wicker(
         *inp_nodes, spatial_dims=(28, 28), strides=(1, 2, 2, 1, 1),
         sum_node_types='local', kernel_size=2,
         sum_num_channels=(32, 32, 32, 64, 64), prod_num_channels=(16, 32, 32, 64, 64),
-        num_channels_top=32):
+        num_channels_top=32, return_conv_spn=False):
     conv_spn_gen = ConvSPN()
 
     prod_num_channels = _preprocess_prod_num_channels(
@@ -41,6 +41,8 @@ def full_wicker(
         prod_num_channels=prod_num_channels, spatial_dims=spatial_dims,
         num_channels_top=num_channels_top, strides=strides, kernel_size=kernel_size,
         sum_node_type=sum_node_types)
+    if return_conv_spn:
+        return root, conv_spn_gen
     return root
 
 

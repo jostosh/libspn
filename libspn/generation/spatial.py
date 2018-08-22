@@ -78,6 +78,7 @@ class ConvSPN:
             dilation_rate=int((2 ** stack_size) // np.prod(strides)),
             num_channels=num_channels_top
         )
+        self._register_node(final_conv, self.node_level[wicker_head] + 1)
         root = Sum(final_conv)
         return root
 
