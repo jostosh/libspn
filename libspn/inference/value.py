@@ -12,6 +12,7 @@ from libspn.graph.algorithms import compute_graph_up, compute_graph_up_dynamic
 from libspn.graph.node import DynamicVarNode, DynamicInterface
 from libspn.graph.distribution import GaussianLeaf
 from libspn.inference.type import InferenceType
+from libspn.graph.spatialsum import SpatialSum
 from libspn import utils
 from libspn.graph.basesum import BaseSum
 
@@ -30,7 +31,7 @@ class BaseValue(abc.ABC):
     """
 
     def __init__(self, inference_type=None, log=True, name="Value", dropconnect_keep_prob=None, 
-                 dropout_keep_prob=None):
+                 dropout_keep_prob=None, matmul_or_conv=True):
         if inference_type not in [None, InferenceType.MARGINAL, InferenceType.MPE]:
             raise ValueError(
                 "Inference type must either None or libspn.InferenceType.MARGINAL "
@@ -41,6 +42,7 @@ class BaseValue(abc.ABC):
         self._dropout_keep_prob = dropout_keep_prob
         self._name = name
         self._log = log
+        self._matmul_or_conv = matmul_or_conv
 
     @property
     def log(self):
@@ -64,6 +66,8 @@ class BaseValue(abc.ABC):
                 kwargs = self._get_node_kwargs(node)
                 inference_type = self._inference_type or node.inference_type
                 if inference_type == InferenceType.MARGINAL:
+                    if isinstance(node, SpatialSum):
+                        kwargs['matmul_or_conv'] = self._matmul_or_conv
                     if self._log:
                         return node._compute_log_value(*args, **kwargs)
                     else:
@@ -159,6 +163,8 @@ class DynamicBaseValue(BaseValue, abc.ABC):
                     kwargs = self._get_node_kwargs(node, step, interface_value_map)    
                     inference_type = self._inference_type or node.inference_type
                     if inference_type == InferenceType.MARGINAL:
+                        if isinstance(node, SpatialSum):
+                            kwargs['matmul_or_conv'] = self._matmul_or_conv
                         if self._log:
                             val = node._compute_log_value(*args, **kwargs)
                         else:
