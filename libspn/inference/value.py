@@ -104,19 +104,19 @@ class BaseValue(abc.ABC):
 class Value(BaseValue):
 
     def __init__(self, inference_type=None, dropconnect_keep_prob=None, dropout_keep_prob=None, 
-                 name="Value"):
+                 name="Value", matmul_or_conv=True):
         super().__init__(inference_type=inference_type, name=name, log=False, 
                          dropconnect_keep_prob=dropconnect_keep_prob, 
-                         dropout_keep_prob=dropout_keep_prob)
+                         dropout_keep_prob=dropout_keep_prob, matmul_or_conv=matmul_or_conv)
 
 
 class LogValue(BaseValue):
 
     def __init__(self, inference_type=None, dropconnect_keep_prob=None, dropout_keep_prob=None, 
-                 name="LogValue"):
+                 name="LogValue", matmul_or_conv=True):
         super().__init__(inference_type=inference_type, name=name, log=True, 
                          dropconnect_keep_prob=dropconnect_keep_prob, 
-                         dropout_keep_prob=dropout_keep_prob)
+                         dropout_keep_prob=dropout_keep_prob, matmul_or_conv=matmul_or_conv)
 
 
 class DynamicBaseValue(BaseValue, abc.ABC):
@@ -205,16 +205,18 @@ class DynamicBaseValue(BaseValue, abc.ABC):
 class DynamicValue(DynamicBaseValue):
 
     def __init__(self, inference_type=None, dropout_keep_prob=None, dropconnect_keep_prob=None, 
-                 name="DynamicValue"):
+                 name="DynamicValue", matmul_or_conv=True):
         super().__init__(inference_type=inference_type, dropout_keep_prob=dropout_keep_prob, 
-                         dropconnect_keep_prob=dropconnect_keep_prob, name=name, log=False)
+                         dropconnect_keep_prob=dropconnect_keep_prob, name=name, log=False,
+                         matmul_or_conv=matmul_or_conv)
 
 
 class DynamicLogValue(DynamicBaseValue):
 
     def __init__(self, inference_type=None, dropout_keep_prob=None, dropconnect_keep_prob=None, 
-                 name="DynamicLogValue"):
+                 name="DynamicLogValue", matmul_or_conv=True):
         super().__init__(inference_type=inference_type, dropout_keep_prob=dropout_keep_prob, 
-                         dropconnect_keep_prob=dropconnect_keep_prob, name=name, log=True)
+                         dropconnect_keep_prob=dropconnect_keep_prob, name=name, log=True,
+                         matmul_or_conv=matmul_or_conv)
 
 

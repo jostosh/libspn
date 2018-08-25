@@ -1292,6 +1292,7 @@ class VarNode(Node):
             dimension corresponds to the batch size.
         """
 
+    @utils.lru_cache
     def _compute_log_value(self):
         """Assemble TF operations computing the marginal log value of this node.
 
@@ -1301,6 +1302,7 @@ class VarNode(Node):
         """
         return tf.log(self._compute_value())
 
+    @utils.lru_cache
     def _compute_mpe_value(self):
         """Assemble TF operations computing the MPE value of this node.
 
@@ -1312,6 +1314,7 @@ class VarNode(Node):
         """
         return self._compute_value()
 
+    @utils.lru_cache
     def _compute_log_mpe_value(self):
         """Assemble TF operations computing the log MPE value of this node.
 

@@ -56,23 +56,23 @@ class MPEPath:
                     self._value = DynamicLogValue(
                         value_inference_type, dropout_keep_prob=dropout_keep_prob,
                         dropconnect_keep_prob=dropconnect_keep_prob,
-                        matmul_or_conv=False)
+                        matmul_or_conv=True)
                 else:
                     self._value = DynamicValue(
                         value_inference_type, dropout_keep_prob=dropout_keep_prob,
                         dropconnect_keep_prob=dropconnect_keep_prob,
-                        matmul_or_conv=False)
+                        matmul_or_conv=True)
             else:
                 if log:
                     self._value = LogValue(
                         value_inference_type, dropout_keep_prob=dropout_keep_prob,
                         dropconnect_keep_prob=dropconnect_keep_prob,
-                        matmul_or_conv=False)
+                        matmul_or_conv=True)
                 else:
                     self._value = Value(
                         value_inference_type, dropout_keep_prob=dropout_keep_prob,
                         dropconnect_keep_prob=dropconnect_keep_prob,
-                        matmul_or_conv=False)
+                        matmul_or_conv=True)
         else:
             self._value = value
             self._log = value.log()
