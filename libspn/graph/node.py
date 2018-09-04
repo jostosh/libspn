@@ -785,23 +785,6 @@ class OpNode(Node):
             mask_min = tf.reduce_min(mask, axis=-1, keepdims=True)
             return tf.logical_or(tf.equal(mask, mask_min), tf.less(mask, keep_prob))
 
-    @utils.lru_cache
-    def _create_dropout_mask(self, keep_prob, shape, log=True, name="DropoutMask",
-                             dtype=conf.dtype, axis=-1):
-        """Creates a dropout mask with values drawn from a Bernoulli distribution with parameter
-        ``keep_prob``.
-
-        Args:
-            keep_prob (Tensor): A float ``Tensor`` indicating the probability of keeping an element
-                active.
-            shape (Tensor): A 1D ``Tensor`` specifying the shape of the
-
-        """
-        with tf.name_scope(name):
-            mask = tfd.Bernoulli(probs=keep_prob, dtype=dtype, name="DropoutMaskBernoulli")\
-                .sample(sample_shape=shape)
-            return tf.log(mask) if log else mask
-
 
 class VarNode(Node):
     """An abstract class defining a variable node of the SPN graph.
