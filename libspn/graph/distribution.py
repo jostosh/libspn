@@ -113,14 +113,13 @@ class DistributionLeaf(VarNode, abc.ABC):
         self._dimensionality = data['dimensionality']
         super().deserialize(data)
 
-    def _total_accumulates(self, init_val, shape):
+    def _total_accumulates(self, initializer, shape):
         """Creates a ``Variable`` that holds the counts per component.
 
         Return:
               Counts per component: ``Variable`` holding counts per component.
         """
-        # TODO shouldn't this go somewhere else?
-        init = utils.broadcast_value(init_val, shape, dtype=conf.dtype)
+        init = initializer(shape=shape, dtype=conf.dtype)
         return tf.Variable(init, name=self.name + "TotalCounts", trainable=False)
 
     @utils.docinherit(Node)
@@ -197,6 +196,7 @@ class DistributionLeaf(VarNode, abc.ABC):
         return self._evidence_mask(self._dist.log_prob(self._preprocessed_feed()), tf.zeros_like)
 
     @utils.docinherit(Node)
+    @utils.lru_cache
     def _compute_scope(self):
         return [Scope(self, i) for i in range(self._num_vars) for _ in range(self._num_components)]
 

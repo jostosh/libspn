@@ -12,22 +12,6 @@ import tensorflow as tf
 dtype = tf.float32
 """Default dtype used by LibSPN."""
 
-custom_gather_cols = True
-"""Whether to use custom op for implementing
-:meth:`~libspn.utils.gather_cols`."""
-
-custom_gather_cols_3d = True
-"""Whether to use custom op for implementing
-:meth:`~libspn.utils.gather_cols_3d`."""
-
-custom_scatter_cols = True
-"""Whether to use custom op for implementing
-:meth:`~libspn.utils.scatter_cols`."""
-
-custom_scatter_values = True
-"""Whether to use custom op for implementing
-:meth:`~libspn.utils.scatter_values`."""
-
 custom_one_hot_conv2d = True
 """Whether to use custom op for implementing
 :meth:`~libspn.utils.one_hot_conv2d`."""

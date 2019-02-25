@@ -29,7 +29,7 @@ class Concat(OpNode):
     """
 
     def __init__(self, *inputs, name="Concat", axis=1):
-        super().__init__(InferenceType.MARGINAL, name)
+        super().__init__(inference_type=InferenceType.MARGINAL, name=name)
         self.set_inputs(*inputs)
         self._axis = axis
 
@@ -81,6 +81,7 @@ class Concat(OpNode):
         return sum(self._gather_input_sizes(*input_out_sizes))
 
     @utils.docinherit(OpNode)
+    @utils.lru_cache
     def _compute_scope(self, *input_scopes):
         if not self._inputs:
             raise StructureError("%s is missing inputs." % self)
@@ -106,7 +107,7 @@ class Concat(OpNode):
 
     @utils.docinherit(OpNode)
     @utils.lru_cache
-    def _compute_value(self, *input_tensors):
+    def _compute_log_value(self, *input_tensors):
         # Check inputs
         if not self._inputs:
             raise StructureError("%s is missing inputs." % self)
@@ -118,6 +119,32 @@ class Concat(OpNode):
         if self.is_spatial:
             out = tf.reshape(out, (-1, int(np.prod(self.output_shape_spatial))))
         return out
+
+    @utils.docinherit(OpNode)
+    def _compute_log_mpe_value(self, *input_tensors):
+        return self._compute_log_value(*input_tensors)
+
+    def _compute_log_mpe_path(self, counts, *input_values, add_random=False,
+                              use_unweighted=False):
+        # Check inputs
+        if not self._inputs:
+            raise StructureError("%s is missing inputs." % self)
+        # Split counts for each input
+        input_sizes = self.get_input_sizes(*input_values)
+        # input_shapes = self._gather_input_shapes()
+        if self.is_spatial:
+            input_shapes = self._gather_input_shapes()
+            counts = tf.reshape(counts, (-1,) + self.output_shape_spatial)
+            split = utils.split_maybe(counts, self._num_channels_per_input(), axis=self._axis)
+            split = [tf.reshape(t, (-1, int(np.prod(s)))) for t, s in zip(split, input_shapes)]
+        else:
+            split = utils.split_maybe(counts, input_sizes, 1)
+        return self._scatter_to_input_tensors(*[(t, v) for t, v in
+                                                zip(split, input_values)])
+
+    @property
+    def is_spatial(self):
+        return self._axis == 3
 
     @property
     def output_shape_spatial(self):
@@ -150,41 +177,3 @@ class Concat(OpNode):
                                  "is not spatial.")
         shapes = self._gather_input_shapes()
         return [s[self._axis - 1] for s in shapes]
-
-    @utils.docinherit(OpNode)
-    def _compute_log_value(self, *input_tensors):
-        return self._compute_value(*input_tensors)
-
-    @utils.docinherit(OpNode)
-    def _compute_mpe_value(self, *input_tensors):
-        return self._compute_value(*input_tensors)
-
-    @utils.docinherit(OpNode)
-    def _compute_log_mpe_value(self, *input_tensors):
-        return self._compute_value(*input_tensors)
-
-    @property
-    def is_spatial(self):
-        return self._axis == 3
-
-    def _compute_mpe_path(self, counts, *input_values, add_random=False,
-                          use_unweighted=False):
-        # Check inputs
-        if not self._inputs:
-            raise StructureError("%s is missing inputs." % self)
-        # Split counts for each input
-        input_sizes = self.get_input_sizes(*input_values)
-        # input_shapes = self._gather_input_shapes()
-        if self.is_spatial:
-            input_shapes = self._gather_input_shapes()
-            counts = tf.reshape(counts, (-1,) + self.output_shape_spatial)
-            split = utils.split_maybe(counts, self._num_channels_per_input(), axis=self._axis)
-            split = [tf.reshape(t, (-1, int(np.prod(s)))) for t, s in zip(split, input_shapes)]
-        else:
-            split = utils.split_maybe(counts, input_sizes, 1)
-        return self._scatter_to_input_tensors(*[(t, v) for t, v in
-                                                zip(split, input_values)])
-
-    def _compute_log_mpe_path(self, counts, *value_values, add_random=False,
-                              use_unweighted=False):
-        return self._compute_mpe_path(counts, *value_values)

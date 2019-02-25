@@ -11,7 +11,6 @@ from libspn.graph.algorithms import traverse_graph
 from libspn.exceptions import StructureError
 from libspn.learning.type import LearningTaskType
 from libspn.learning.type import LearningMethodType
-from libspn.learning.type import GradientType
 from libspn.graph.distribution import LocationScaleLeaf
 from libspn.graph.weights import Weights
 from libspn.graph.sum import Sum
@@ -31,10 +30,6 @@ class GDLearning:
         learning_task_type (LearningTaskType): Learning type used while learning.
         learning_method (LearningMethodType): Learning method type, can be either generative
             (LearningMethodType.GENERATIVE) or discriminative (LearningMethodType.DISCRIMINATIVE).
-        gradient_type (GradientType): The type of gradients to use for backpropagation, can be
-            either soft (effectively viewing sum nodes as weighted sums) or hard (effectively
-            viewing sum nodes as weighted maxes). Soft and hard correspond to GradientType.SOFT
-            and GradientType.HARD, respectively.
         marginalizing_root (Sum, ParSums, SumsLayer): A sum node without IVs attached to it (or
             IVs with a fixed no-evidence feed). If it is omitted here, the node will constructed
             internally once needed.
@@ -49,12 +44,12 @@ class GDLearning:
                  dropprod_keep_prob=None, noise=None,
                  learning_task_type=LearningTaskType.SUPERVISED,
                  learning_method=LearningMethodType.DISCRIMINATIVE,
-                 gradient_type=GradientType.SOFT, learning_rate=1e-4, marginalizing_root=None,
+                 learning_rate=1e-4, marginalizing_root=None,
                  name="GDLearning", l1_regularize_coeff=None, l2_regularize_coeff=None,
                  confidence_penalty_coeff=None,
                  entropy_regularize_coeff=None,
                  gauss_regularize_coeff=None, gauss_kl_coeff=None, gauss_ce_coeff=None,
-                 batch_noise=None,
+                 batch_noise=None, optimizer=None, value=None,
                  linear_w_minimum=1e-2):
 
         if learning_task_type == LearningTaskType.UNSUPERVISED and \
@@ -70,6 +65,7 @@ class GDLearning:
 
         self.__logger.debug1("Dropconnect malfunctioning {}".format(dropconnect_keep_prob))
         self._learning_rate = learning_rate
+        self._optimizer = optimizer
         self._learning_task_type = learning_task_type
         self._learning_method = learning_method
         self._l1_regularize_coeff = l1_regularize_coeff
@@ -82,37 +78,12 @@ class GDLearning:
         self._dropconnect_keep_prob = dropconnect_keep_prob
         self._dropprod_keep_prob = dropprod_keep_prob
         self._batch_noise = batch_noise
-        self._gradient_type = gradient_type
         self._value_inference_type = value_inference_type
         self._name = name
         self._noise = noise
         self._linear_w_minimum = linear_w_minimum
 
-    def loss(self, learning_method=None, dropconnect_keep_prob=None, dropprod_keep_prob=None,
-             noise=None, batch_noise=None, reduce_fn=tf.reduce_mean):
-        """Assembles main objective operations. In case of generative learning it will select 
-        the MLE objective, whereas in discriminative learning it selects the cross entropy.
-        
-        Args:
-            learning_method (LearningMethodType): The learning method (can be either generative 
-                or discriminative).
-            dropconnect_keep_prob (float or Tensor): The dropconnect keep probability to use. 
-                Overrides the value of GDLearning._dropconnect_keep_prob
-            
-        Returns:
-            An operation to compute the main loss function.
-        """
-        learning_method = learning_method or self._learning_method
-        if learning_method == LearningMethodType.GENERATIVE:
-            return self.mle_loss(
-                dropconnect_keep_prob=dropconnect_keep_prob, dropprod_keep_prob=dropprod_keep_prob,
-                noise=noise, batch_noise=batch_noise, reduce_fn=reduce_fn)
-        return self.cross_entropy_loss(
-            dropconnect_keep_prob=dropconnect_keep_prob, dropprod_keep_prob=dropprod_keep_prob,
-            noise=noise, batch_noise=batch_noise, reduce_fn=reduce_fn)
-
-    def learn(self, loss=None, gradient_type=None, optimizer=tf.train.GradientDescentOptimizer,
-              name="LearnGD"):
+    def learn(self, loss=None, optimizer=None, post_gradient_ops=True):
         """Assemble TF operations performing GD learning of the SPN. This includes setting up
         the loss function (with regularization), setting up the optimizer and setting up
         post gradient-update ops.
@@ -120,42 +91,36 @@ class GDLearning:
         Args:
             loss (Tensor): The operation corresponding to the loss to minimize.
             optimizer (tf.train.Optimizer): A TensorFlow optimizer to use for minimizing the loss.
-            gradient_type (GradientType): The type of gradients to use for backpropagation, can be
-                either soft (effectively viewing sum nodes as weighted sums) or hard (effectively
-                viewing sum nodes as weighted maxes). Soft and hard correspond to GradientType.SOFT
-                and GradientType.HARD, respectively.
 
         Returns:
-            A grouped operation that (i) updates the parameters using gradient descent, (ii)
-            projects new weights onto the probability simplex and (iii) clips new variances of
-            GaussianLeaf nodes.
+            A tuple of grouped update Ops and a loss Op.
         """
         if self._learning_task_type == LearningTaskType.SUPERVISED and self._root.ivs is None:
             raise StructureError(
                 "{}: the SPN rooted at {} does not have a latent IVs node, so cannot setup "
                 "conditional class probabilities.".format(self._name, self._root))
 
-        # Traverse the graph and set gradient-type for all OpNodes
-        self._root.set_gradient_types(gradient_type or self._gradient_type)
-
         # If a loss function is not provided, define the loss function based
         # on learning-type and learning-method
-        with tf.name_scope(name):
-            with tf.name_scope("Loss"):
-                loss = loss or self.loss()
-                reg_coeffs = [self._l1_regularize_coeff, self._l2_regularize_coeff,
-                              self._entropy_regularize_coeff, self._gauss_ce_coeff,
-                              self._gauss_kl_coeff, self._gauss_regularize_coeff]
-                if any(c is not None for c in reg_coeffs) and any(c != 0.0 for c in reg_coeffs):
-                    loss += self.regularization_loss()
-                if self._confidence_penalty_coeff is not None and \
-                        self._confidence_penalty_coeff != 0.0:
-                    loss += self.confidence_penalty_loss()
+        with tf.name_scope("Loss"):
+            if loss is None:
+                loss = (
+                    self.negative_log_likelihood() if self._learning_method == LearningMethodType.GENERATIVE else
+                    self.cross_entropy_loss()
+                )
+            if self._l1_regularize_coeff is not None or self._l2_regularize_coeff is not None:
+                loss += self.regularization_loss()
 
-            # Assemble TF ops for optimizing and weights normalization
-            with tf.name_scope("ParameterUpdate"):
-                minimize = optimizer(self._learning_rate).minimize(loss=loss)
+        # Assemble TF ops for optimizing and weights normalization
+        optimizer = optimizer if optimizer is not None else self._optimizer
+        if optimizer is None:
+            raise ValueError("Did not specify GD optimizer")
+        with tf.name_scope("ParameterUpdate"):
+            minimize = optimizer.minimize(loss=loss)
+            if post_gradient_ops:
                 return self.post_gradient_update(minimize), loss
+            else:
+                return minimize, loss
 
     def post_gradient_update(self, update_op):
         """Constructs post-parameter update ops such as normalization of weights and clipping of
@@ -216,15 +181,15 @@ class GDLearning:
                 noise=noise, batch_noise=batch_noise)
             return -reduce_fn(log_prob_data_and_labels - log_prob_data)
 
-    def mle_loss(self, name="MaximumLikelihoodLoss", reduce_fn=tf.reduce_mean,
+    def negative_log_likelihood(self, name="NegativeLogLikelihood", reduce_fn=tf.reduce_mean,
                  dropconnect_keep_prob=None, dropprod_keep_prob=None, noise=None, batch_noise=None):
-        """Returns the maximum (log) likelihood estimator loss function which corresponds to
-        -log(p(X)) in the case of unsupervised learning or -log(p(X,Y)) in the case of supervised
+        """Returns the maximum (log) likelihood estimate loss function which corresponds to
+        -log(p(X)) in the case of unsupervised learning or -log(p(X,Y)) in the case of supservised
         learning.
 
         Args:
             name (str): The name for the name scope to use
-            reduce_fn (function): An function that returns an operation that reduces the losses for 
+            reduce_fn (function): An function that returns an operation that reduces the losses for
                 all samples to a scalar.
             dropconnect_keep_prob (float or Tensor): Keep probability for dropconnect, will
                 override the value of GDLearning._dropconnect_keep_prob.
@@ -256,7 +221,7 @@ class GDLearning:
             return -reduce_fn(likelihood)
 
     def confidence_penalty_loss(
-            self, confidence_penalty_coeff=None, dropconnect_keep_prob=None, 
+            self, confidence_penalty_coeff=None, dropconnect_keep_prob=None,
             dropprod_keep_prob=None, noise=None, name="ConfidencePenalty", batch_noise=None):
         self.__logger.debug1("Assembling confidence penalty loss")
         with tf.name_scope(name):

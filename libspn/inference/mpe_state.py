@@ -9,7 +9,7 @@ import tensorflow as tf
 from libspn.inference.mpe_path import MPEPath
 
 
-class MPEState():
+class MPEState:
     """Assembles TF operations computing MPE state for an SPN.
 
     Args:

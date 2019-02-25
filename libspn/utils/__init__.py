@@ -9,23 +9,14 @@
 
 from .utils import decode_bytes_array
 from .lrucache import lru_cache
-from .math import gather_cols
 from .math import gather_cols_3d
 from .math import scatter_cols
 from .math import scatter_values
-from .math import ValueType
-from .math import broadcast_value
-from .math import normalize_tensor
-from .math import normalize_tensor_2D
-from .math import normalize_log_tensor_2D
-from .math import reduce_log_sum
-from .math import reduce_log_sum_3D
-from .math import concat_maybe
-from .math import split_maybe
-from .math import one_hot_conv2d
-from .math import one_hot_conv2d_backprop
+from .math import cwise_add
 from .math import logmatmul
 from .math import logtensordot
+from .math import one_hot_conv2d
+from .math import one_hot_conv2d_backprop
 from .partition import StirlingNumber
 from .partition import StirlingRatio
 from .partition import Stirling
@@ -46,7 +37,7 @@ from .spngraphkeys import SPNGraphKeys
 # All
 __all__ = ['decode_bytes_array', 'scatter_cols', 'scatter_values',
            'one_hot_conv2d', 'one_hot_conv2d_backprop',
-           'logmatmul', 'logtensordot',
+           'logmatmul', 'logtensordot', 'cwise_add',
            'gather_cols', 'gather_cols_3d', 'ValueType', 'broadcast_value',
            'normalize_tensor', 'normalize_tensor_2D', 'normalize_log_tensor_2D',
            'reduce_log_sum', 'reduce_log_sum_3D', 'concat_maybe', 'split_maybe',
