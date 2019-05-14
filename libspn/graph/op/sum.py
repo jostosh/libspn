@@ -1,5 +1,5 @@
 from libspn.inference.type import InferenceType
-from libspn.graph.op.basesum import BaseSum
+from libspn.graph.basesum import BaseSum
 import libspn.utils as utils
 
 

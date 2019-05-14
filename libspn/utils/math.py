@@ -5,7 +5,7 @@ import numpy as np
 import collections
 from libspn import utils as utils
 from libspn.ops import ops
-# from tensorflow.python.framework import ops as tfops
+from tensorflow.python.framework import ops as tfops
 
 
 def one_hot_conv2d(input, filter, strides=(1, 1), dilations=(1, 1), padding="VALID",
@@ -321,9 +321,9 @@ def scatter_cols(params, indices, num_out_cols, name=None):
         # Check indices
         if indices.ndim != 1:
             raise ValueError("'indices' must be 1D")
-        if indices.size != param_size:
-            raise ValueError("Sizes of 'indices' and the indexed dimension of "
-                             "'params' must be the same")
+        # if indices.size != param_size:
+        #     raise ValueError("Sizes of 'indices' and the indexed dimension of "
+        #                      "'params' must be the same")
         if not np.issubdtype(indices.dtype, np.integer):
             raise ValueError("'indices' must be integer, not %s"
                              % indices.dtype)
@@ -459,8 +459,8 @@ def scatter_values(params, indices, num_out_cols, name=None):
             indices_size = indices_shape[0].value
         elif indices_dims == 2:
             indices_size = indices_shape[1].value
-        if indices_size != param_size:
-            raise ValueError("Sizes of 'indices' and 'params' must be the same")
+        # if indices_size != param_size:
+        #     raise ValueError("Sizes of 'indices' and 'params' must be the same")
         # TODO: Need a way for tensor bound-checking that 0 <= indices < num_out_cols
         # if np.any((indices < 0) | (indices >= num_out_cols)):
         #     raise ValueError("'indices' must be smaller than 'num_out_cols'")

@@ -224,11 +224,9 @@ class BuildCommand(distutils.command.build.build):
 
     def _test(self):
         print(self._col_head + "Testing:" + self._col_clear)
-        import libspn.ops.ops
-        libspn.ops.gather_cols
-        libspn.ops.gather_cols_3d
-        libspn.ops.scatter_cols
-        libspn.ops.scatter_values
+        import libspn.ops.ops as ops
+        ops.one_hot_conv2d
+        ops.one_hot_conv2d_backprop
         print("Custom ops loaded correctly!")
 
     def run(self):

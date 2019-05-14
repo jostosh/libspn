@@ -13,7 +13,7 @@ from libspn.exceptions import StructureError
 import numpy as np
 from libspn.graph.scope import Scope
 from libspn.graph.node import OpNode
-from libspn.graph.op.spatialsum import SpatialSum
+from libspn.graph.spatialsum import SpatialSum
 from libspn import conf
 from libspn.graph.op.productslayer import ProductsLayer
 from libspn.log import get_logger
@@ -333,14 +333,19 @@ class ConvProd2D(OpNode):
         inp_concat = self._prepare_convolutional_processing(*input_values)
         spatial_counts = tf.reshape(counts, (-1,) + self.output_shape_spatial)
 
-        input_counts = tf.nn.conv2d_backprop_input(
-            input_sizes=tf.shape(inp_concat),
-            filter=self._dense_connections,
-            out_backprop=spatial_counts,
-            strides=[1] + self._strides + [1],
-            padding='VALID',
-            dilations=[1] + self._dilation_rate + [1],
-            data_format="NHWC")
+        if conf.custom_one_hot_conv2d:
+            input_counts = utils.one_hot_conv2d_backprop(
+                inp_concat, self._sparse_connections, spatial_counts, strides=self._strides,
+                dilations=self._dilation_rate)
+        else:
+            input_counts = tf.nn.conv2d_backprop_input(
+                input_sizes=tf.shape(inp_concat),
+                filter=self._dense_connections,
+                out_backprop=spatial_counts,
+                strides=[1] + self._strides + [1],
+                padding='VALID',
+                dilations=[1] + self._dilation_rate + [1],
+                data_format="NHWC")
 
         # In case we have explicitly padded the tensor before forward convolution, we should
         # slice the counts now

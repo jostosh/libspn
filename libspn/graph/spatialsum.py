@@ -1,5 +1,5 @@
 from libspn.inference.type import InferenceType
-from libspn.graph.op.basesum import BaseSum
+from libspn.graph.basesum import BaseSum
 import libspn.utils as utils
 import tensorflow as tf
 from libspn.exceptions import StructureError
@@ -203,34 +203,34 @@ class SpatialSum(BaseSum, abc.ABC):
             self.logger.debug1("{}: using matrix multiplication or conv ops.".format(self))
             w_tensor, _, inp_concat = self._prepare_component_wise_processing(
                 w_tensor, ivs_tensor, *input_tensors)
-            # if dropconnect_keep_prob is not None and (not isinstance(
-            #         dropconnect_keep_prob, (int, float)) or dropconnect_keep_prob != 1.0):
-            #     if conf.dropout_mode == "weights":
-            #         self.logger.debug1("{}: applying dropout with p={} to weights.".format(
-            #             self, dropconnect_keep_prob))
-            #         dropout_mask = self._create_dropconnect_mask(
-            #             keep_prob=dropconnect_keep_prob, shape=tf.shape(w_tensor))
-            #         min_inf = tf.cast(
-            #             tf.fill(tf.shape(w_tensor), value=float('-inf')), dtype=conf.dtype)
-            #         w_tensor = tf.where(dropout_mask, w_tensor, min_inf)
-            #         if conf.renormalize_dropconnect:
-            #             w_tensor = tf.nn.log_softmax(w_tensor, axis=-1)
-            #         if conf.rescale_dropconnect:
-            #             w_tensor -= tf.log(
-            #                 dropconnect_keep_prob +
-            #                 dropconnect_keep_prob ** w_tensor.shape[-1].value)
-            #     else:  # Dropout to inputs (products)
-            #         self.logger.debug1("{}: applying dropout with p={} to sum inputs.".format(
-            #             self, dropconnect_keep_prob))
-            #         dropout_mask = self._create_dropconnect_mask(
-            #             keep_prob=dropconnect_keep_prob, shape=tf.shape(inp_concat))
-            #         min_inf = tf.cast(
-            #             tf.fill(tf.shape(inp_concat), value=float('-inf')), dtype=conf.dtype)
-            #         inp_concat = tf.where(dropout_mask, inp_concat, min_inf)
-            #         if conf.rescale_dropconnect:
-            #             inp_concat -= tf.log(
-            #                 dropconnect_keep_prob +
-            #                 dropconnect_keep_prob ** inp_concat.shape[-1].value)
+            if dropconnect_keep_prob is not None and (not isinstance(
+                    dropconnect_keep_prob, (int, float)) or dropconnect_keep_prob != 1.0):
+                if conf.dropout_mode == "weights":
+                    self.logger.debug1("{}: applying dropout with p={} to weights.".format(
+                        self, dropconnect_keep_prob))
+                    dropout_mask = self._create_dropconnect_mask(
+                        keep_prob=dropconnect_keep_prob, shape=tf.shape(w_tensor))
+                    min_inf = tf.cast(
+                        tf.fill(tf.shape(w_tensor), value=float('-inf')), dtype=conf.dtype)
+                    w_tensor = tf.where(dropout_mask, w_tensor, min_inf)
+                    if conf.renormalize_dropconnect:
+                        w_tensor = tf.nn.log_softmax(w_tensor, axis=-1)
+                    if conf.rescale_dropconnect:
+                        w_tensor -= tf.log(
+                            dropconnect_keep_prob +
+                            dropconnect_keep_prob ** w_tensor.shape[-1].value)
+                else:  # Dropout to inputs (products)
+                    self.logger.debug1("{}: applying dropout with p={} to sum inputs.".format(
+                        self, dropconnect_keep_prob))
+                    dropout_mask = self._create_dropconnect_mask(
+                        keep_prob=dropconnect_keep_prob, shape=tf.shape(inp_concat))
+                    min_inf = tf.cast(
+                        tf.fill(tf.shape(inp_concat), value=float('-inf')), dtype=conf.dtype)
+                    inp_concat = tf.where(dropout_mask, inp_concat, min_inf)
+                    if conf.rescale_dropconnect:
+                        inp_concat -= tf.log(
+                            dropconnect_keep_prob +
+                            dropconnect_keep_prob ** inp_concat.shape[-1].value)
 
             # Determine whether to use matmul or conv op and return
             if all(w_tensor.shape[i] == 1 for i in self._op_axis):
@@ -285,7 +285,7 @@ class SpatialSum(BaseSum, abc.ABC):
             the remaining tuples correspond to the nodes in ``self._values``.
         """
         sample_prob = utils.maybe_first(sample_prob, self._sample_prob)
-        num_samples = 1 if reducible_log_prob.shape[self._channel_axis] != 1 else self._num_channels
+        num_samples = self._tile_unweighted_size if use_unweighted else 1
         if sample:
             max_indices = self._reduce_sample_log(
                 reducible_log_prob, sample_prob=sample_prob, num_samples=num_samples)

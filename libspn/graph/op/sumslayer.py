@@ -8,7 +8,7 @@ import tensorflow as tf
 from libspn.graph.scope import Scope
 from libspn.inference.type import InferenceType
 from libspn.graph.weights import Weights
-from libspn.graph.op.basesum import BaseSum
+from libspn.graph.basesum import BaseSum
 from libspn import utils
 from libspn.exceptions import StructureError
 from libspn import conf

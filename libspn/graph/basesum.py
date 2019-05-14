@@ -440,7 +440,7 @@ class BaseSum(OpNode, abc.ABC):
     @utils.lru_cache
     def _compute_mpe_path_common(
         self, reducible_tensor, counts, w_tensor, latent_indicators_tensor, *input_tensors,
-        sample=False, sample_prob=None, accumulate_weights_batch=False):
+        sample=False, sample_prob=None, accumulate_weights_batch=False, use_unweighted=False):
         """Common operations for computing the MPE path.
 
         Args:
@@ -461,7 +461,7 @@ class BaseSum(OpNode, abc.ABC):
             tuples correspond to the nodes in ``self._values``.
         """
         sample_prob = utils.maybe_first(sample_prob, self._sample_prob)
-        num_samples = 1 if reducible_tensor.shape[self._reduce_axis] != 1 else self._num_sums
+        num_samples = self._tile_unweighted_size if use_unweighted else 1
         if sample:
             max_indices = self._reduce_sample_log(
                 reducible_tensor, sample_prob=sample_prob, num_samples=num_samples)
@@ -516,7 +516,7 @@ class BaseSum(OpNode, abc.ABC):
         return self._compute_mpe_path_common(
             reducible, counts, w_tensor, latent_indicators_tensor, *input_tensors,
             accumulate_weights_batch=accumulate_weights_batch, sample=sample,
-            sample_prob=sample_prob)
+            sample_prob=sample_prob, use_unweighted=not weighted)
 
     @property
     def _tile_unweighted_size(self):
@@ -656,10 +656,11 @@ class BaseSum(OpNode, abc.ABC):
         """
         w_tensor, latent_indicators_tensor, *input_tensors = self._gather_input_tensors(
             w_tensor, latent_indicators_tensor, *input_tensors)
-        input_tensors = [tf.expand_dims(t, axis=self._op_axis) if len(t.shape) == 2 else t for
-                         t in input_tensors]
+
+        reducible_inputs = tf.expand_dims(
+            tf.concat(input_tensors, axis=self._reduce_axis - 1), axis=self._op_axis)
+
         w_tensor = tf.expand_dims(w_tensor, axis=self._batch_axis)
-        reducible_inputs = tf.concat(input_tensors, axis=self._reduce_axis)
         if latent_indicators_tensor is not None:
             latent_indicators_tensor = tf.reshape(latent_indicators_tensor,
                                                   shape=(-1, self._num_sums, self._max_sum_size))

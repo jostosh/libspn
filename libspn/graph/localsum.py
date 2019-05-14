@@ -6,15 +6,15 @@
 # ------------------------------------------------------------------------
 
 from libspn.inference.type import InferenceType
-from libspn.graph.op.basesum import BaseSum
+from libspn.graph.basesum import BaseSum
 import libspn.utils as utils
 import tensorflow as tf
 import numpy as np
-from libspn.graph.op.spatialsum import SpatialSum
+from libspn.graph.spatialsum import SpatialSum
 
 
 @utils.register_serializable
-class ConvSum(SpatialSum):
+class LocalSum(SpatialSum):
     """A container representing convolutional sums (which share the same input) in an SPN.
 
     Args:
@@ -35,17 +35,23 @@ class ConvSum(SpatialSum):
                                        op generation.
     """
 
+    @utils.docinherit(SpatialSum)
     def _num_inner_sums(self):
-        return self._num_channels
+        return int(np.prod(self._grid_dim_sizes) * self._num_channels)
 
     @utils.docinherit(SpatialSum)
     def _spatial_weight_shape(self):
-        return [1] * 3 + [self._num_channels, self._max_sum_size]
+        return [1] + self._grid_dim_sizes + [self._num_channels, self._max_sum_size]
 
     @utils.docinherit(BaseSum)
     def _get_sum_sizes(self, num_sums):
         num_values = sum(self._get_input_num_channels())  # Skip ivs, weights
-        return num_sums * int(np.prod(self._grid_dim_sizes)) * [num_values]
+        return num_sums * [num_values]
+
+    @property
+    def _tile_unweighted_size(self):
+        return self._num_channels
 
     def _accumulate_weight_counts(self, counts_spatial):
-        return tf.reduce_sum(counts_spatial, axis=self._op_axis)
+        return tf.reshape(counts_spatial,
+                          (-1, int(np.prod(self.output_shape_spatial)), self._max_sum_size))

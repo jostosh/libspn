@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 from libspn import BlockSum
-from libspn.graph.op.basesum import BaseSum
+from libspn.graph.basesum import BaseSum
 
 from libspn.inference.value import LogValue
 from libspn.graph.algorithms import traverse_graph

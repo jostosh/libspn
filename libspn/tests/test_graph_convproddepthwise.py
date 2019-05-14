@@ -1,12 +1,9 @@
-from libspn.graph.op.basesum import BaseSum
 from libspn.tests.test import argsprod
 import tensorflow as tf
 import numpy as np
 import libspn as spn
 from libspn.log import get_logger
-from libspn.generation.spatial import ConvSPN
-import itertools
-import random
+
 logger = get_logger()
 
 
