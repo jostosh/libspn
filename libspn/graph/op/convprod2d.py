@@ -290,19 +290,25 @@ class ConvProd2D(OpNode):
         # Concatenate along channel axis
         concat_inp = self._prepare_convolutional_processing(*input_tensors)
 
-        # Convolve
-        # TODO, this the quickest workaround for TensorFlow's apparent optimization whenever
-        # part of the kernel computation involves a -inf:
-        concat_inp = tf.where(
-            tf.is_inf(concat_inp), tf.fill(tf.shape(concat_inp), value=-1e20), concat_inp)
+        if conf.custom_one_hot_conv2d:
+            conv_out = utils.one_hot_conv2d(
+                concat_inp, self._sparse_connections, self._strides, self._dilation_rate)
+        else:
+            # Convolve
+            # TODO, this the quickest workaround for TensorFlow's apparent optimization whenever
+            # part of the kernel computation involves a -inf:
+            concat_inp = tf.where(
+                tf.is_inf(concat_inp), tf.fill(tf.shape(concat_inp), value=-1e20), concat_inp)
+            # TODO the use of NHWC resulted in errors thrown for having dilation rates > 1, seemed
+            # to be a TF debug. Now we transpose before and after
 
-        conv_out = tf.nn.conv2d(
-            input=concat_inp,
-            filter=self._dense_connections, padding='VALID',
-            strides=[1] + self._strides + [1],
-            dilations=[1] + self._dilation_rate + [1],
-            data_format='NHWC'
-        )
+            conv_out = tf.nn.conv2d(
+                input=concat_inp,
+                filter=self._dense_connections, padding='VALID',
+                strides=[1] + self._strides + [1],
+                dilations=[1] + self._dilation_rate + [1],
+                data_format='NHWC'
+            )
         return self._flatten(conv_out)
 
     @utils.lru_cache

@@ -12,6 +12,8 @@ from .math import logtensordot
 from .math import logconv_1x1
 from .math import multinomial_sample
 from .math import argmax_breaking_ties
+from .math import one_hot_conv2d
+from .math import one_hot_conv2d_backprop
 from .partition import StirlingNumber
 from .partition import StirlingRatio
 from .partition import Stirling

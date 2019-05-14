@@ -50,15 +50,15 @@ class ConvProdDepthWise(ConvProd2D):
         # part of the kernel computation involves a -inf:
         # TODO the use of NHWC resulted in errors thrown for having dilation rates > 1, seemed
         # to be a TF debug. Now we transpose before and after
-        concat_inp = tf.where(
-            tf.is_inf(concat_inp), tf.fill(tf.shape(concat_inp), value=-1e20), concat_inp)
+        # concat_inp = tf.where(
+        #     tf.is_inf(concat_inp), tf.fill(tf.shape(concat_inp), value=-1e20), concat_inp)
         conv_out = tf.nn.conv2d(
             input=self._channels_to_batch(concat_inp),
             filter=tf.ones(self._kernel_size + [1, 1]),
             padding='VALID',
-            strides=[1, 1] + self._strides,
-            dilations=[1, 1] + self._dilation_rate,
-            data_format='NCHW'
+            strides=[1] + self._strides + [1],
+            dilations=[1] + self._dilation_rate + [1],
+            data_format='NHWC'
         )
         conv_out = self._batch_to_channels(conv_out)
         return self._flatten(conv_out)
@@ -66,11 +66,11 @@ class ConvProdDepthWise(ConvProd2D):
     @utils.lru_cache
     def _channels_to_batch(self, t):
         gd = t.shape.as_list()[1:3]
-        return tf.reshape(self._transpose_channel_last_to_first(t), [-1, 1] + gd)
+        return tf.reshape(self._transpose_channel_last_to_first(t), [-1] + gd + [1])
     
     @utils.lru_cache
     def _batch_to_channels(self, t):
-        gd = t.shape.as_list()[2:]
+        gd = t.shape.as_list()[1:3]
         return self._transpose_channel_first_to_last(tf.reshape(t, [-1, self._num_channels] + gd))
     
     def _compute_mpe_path_common(self, counts, *input_values):

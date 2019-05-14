@@ -9,13 +9,15 @@ def configs():
     generative = dict(
         unsupervised=True,
         learning_algo="em",
-        batch_size=1,
+        batch_size=16,
         completion=True,
         completion_by_marginal=True,
+        weight_init_min=1.0,
+        weight_init_max=1.0,
         dist='normal',
         sample_prob=0.5,
         log_weights=False,
-        sum_num_c0=64, sum_num_c1=64, sum_num_c2=64, sum_num_c3=64, sum_num_c4=64,
+        sum_num_c0=32, sum_num_c1=32, sum_num_c2=32, sum_num_c3=64, sum_num_c4=64,
         estimate_scale=True,
         normalize_data=True,
         num_epochs=100
@@ -24,11 +26,14 @@ def configs():
     discriminative = dict(
         unsupervised=False,
         learning_algo='amsgrad',
+        weight_init_min=0.01,
+        weight_init_max=1.0,
+        learning_rate=1e-2,
         batch_size=32, 
         dist='cauchy',
-        log_weights=True,
+        log_weights=False,
         sum_num_c0=32, sum_num_c1=64, sum_num_c2=64, sum_num_c3=128, sum_num_c4=128,
-        normalize_data=True,
+        normalize_data=False,
         num_epochs=500,
         fixed_variance=True
     )
@@ -60,8 +65,8 @@ def configs():
     
     return dict(
         mnist=[
-            (combine_dicts(generative, mnist_common, dict(name="MNIST_Generative")), generative_grid),
             (combine_dicts(discriminative, mnist_common, dict(name="MNIST_Discriminative")), discriminative_grid),
+            (combine_dicts(generative, mnist_common, dict(name="MNIST_Generative")), generative_grid),
             (combine_dicts(discriminative, mnist_common, augmentation, dict(name="MNIST_Discriminative_Augmented")), discriminative_grid)
         ],
         fashion_mnist=[

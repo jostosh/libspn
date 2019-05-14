@@ -250,6 +250,7 @@ def initialize_graph(init_weights, reporter, sess):
     train_writer = reporter.tfwriter("train", graph=sess.graph)
     test_writer = reporter.tfwriter("test")
     sess.run([init_accumulators, init_weights, tf.global_variables_initializer()])
+    train_writer.add_graph(sess.graph)
     return train_writer, test_writer
 
 
@@ -315,7 +316,7 @@ def build_spn(args, num_dims, num_vars, train_x, train_y):
         'mnist': 28,
         'fashion_mnist': 28,
         'cifar10': 32,
-        'olivetti': 4,
+        'olivetti': 64,
         'caltech': 100
     }[args.dataset]
     if args.dataset == 'cifar10':
@@ -392,17 +393,14 @@ def setup_learning(args, in_var, root):
                no_op, in_var_mpe
 
     logger.info("Setting up GD learning")
-    global_step = tf.Variable(0, trainable=False)
-    learning_rate = tf.train.exponential_decay(
-        args.learning_rate, global_step, args.lr_decay_steps, args.lr_decay_rate, staircase=True)
     learning_method = spn.LearningMethodType.DISCRIMINATIVE if args.learning_type == 'discriminative' else \
         spn.LearningMethodType.GENERATIVE
     learning = spn.GDLearning(
         root, dropconnect_keep_prob=args.dropconnect_keep_prob,
         learning_task_type=spn.LearningTaskType.SUPERVISED if args.supervised else \
             spn.LearningTaskType.UNSUPERVISED,
-        learning_method=learning_method, learning_rate=learning_rate,
-        marginalizing_root=root_marginalized, global_step=global_step)
+        learning_method=learning_method, learning_rate=args.learning_rate,
+        marginalizing_root=root_marginalized)
 
     optimizer = {
         'adam': tf.train.AdamOptimizer,
@@ -635,7 +633,7 @@ if __name__ == "__main__":
     params.add_argument("--sum_num_c3", default=64, type=int)
     params.add_argument("--sum_num_c4", default=64, type=int)
 
-    params.add_argument("--initial_accum_value", type=float, default=1e-4)
+    params.add_argument("--initial_accum_value", type=float, default=1e-2)
     params.add_argument("--sample_path", action="store_true", dest="sample_path")
     params.add_argument("--sample_prob", type=float, default=None)
     params.add_argument("--use_unweighted", action="store_true", dest="use_unweighted")
