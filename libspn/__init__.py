@@ -14,17 +14,17 @@ from libspn.graph.op.sumslayer import SumsLayer
 from libspn.graph.op.product import Product
 from libspn.graph.op.permproducts import PermProducts
 from libspn.graph.op.productslayer import ProductsLayer
-from libspn.graph.op.convsum import ConvSum
-from libspn.graph.op.localsum import LocalSum
+from libspn.graph.convsum import ConvSum
+from libspn.graph.localsum import LocalSum
 from libspn.graph.op.block_sum import BlockSum
 from libspn.graph.op.block_permute_product import BlockPermuteProduct
 from libspn.graph.op.block_reduce_product import BlockReduceProduct
 from libspn.graph.op.block_random_decompositions import BlockRandomDecompositions
 from libspn.graph.op.block_merge_decomps import BlockMergeDecomps
 from libspn.graph.op.block_root_sum import BlockRootSum
-from libspn.graph.op.convprod2d import ConvProd2D, _ConvProdNaive
-from libspn.graph.op.convproddepthwise import ConvProdDepthWise
-from libspn.graph.op.spatialpermproducts import SpatialPermProducts
+from libspn.graph.convprod2d import ConvProd2D, _ConvProdNaive
+from libspn.graph.convproddepthwise import ConvProdDepthWise
+from libspn.graph.spatialpermproducts import SpatialPermProducts
 from libspn.graph.stridedslice import StridedSlice2D
 from libspn.graph.weights import Weights
 from libspn.graph.weights import assign_weights
