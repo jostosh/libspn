@@ -1,6 +1,8 @@
 from argparse import ArgumentParser
 
 from libspn.examples.convspn.architecture import wicker_convspn_two_non_overlapping, full_wicker
+from libspn.examples.convspn.data_loaders import load_fashion_mnist, load_cifar10, load_mnist, \
+    load_olivetti, load_caltech
 from libspn.examples.convspn.utils import DataIterator, ImageIterator, ExperimentLogger, GroupedMetrics
 from libspn.examples.convspn.amsgrad import AMSGrad
 import tensorflow as tf
@@ -11,10 +13,7 @@ from collections import deque
 from libspn.log import get_logger
 from sklearn.utils import shuffle
 from libspn.utils.initializers import Equidistant
-from sklearn.datasets import olivetti_faces
 import itertools
-import os.path as opth
-import os
 
 LearningType = spn.LearningMethodType
 
@@ -25,7 +24,6 @@ from libspn.graph.leaf.laplace import LaplaceLeaf
 from libspn.graph.leaf.cauchy import CauchyLeaf
 from libspn.graph.leaf.truncated_normal import TruncatedNormalLeaf
 from libspn.graph.leaf.continuous_base import ContinuousLeafBase
-from libspn.graph.leaf.student_t import StudentTLeaf
 
 logger = get_logger()
 
@@ -60,11 +58,9 @@ def train(args):
         root, log=args.log_weights,
         initializer=tf.initializers.random_uniform(args.weight_init_min, args.weight_init_max))
 
-    init_weights = spn.initialize_weights(root)
-
     correct, labels_node, loss, likelihood, update_op, pred_op, reg_loss, loss_per_sample, \
-    mpe_in_var = setup_learning(args, in_var, root)
-    
+        completion_op = setup_learning(args, in_var, root)
+
     # Set up the evaluation tasks
     def evaluate_classification(image_batch, labels_batch, epoch, step):
         feed_dict = {in_var: image_batch}
@@ -83,11 +79,9 @@ def train(args):
         
     # These are default evaluation metrics to be measured at the end of each epoch
     metrics = ["loss", "reg_loss", "accuracy", 'likelihood']
-    gm_default = GroupedMetrics(reporter=reporter,
-                                reduce_fun=np.mean if not args.novelty_detection else 'roc')
+    gm_default = GroupedMetrics(reporter=reporter, reduce_fun=np.mean)
 
     if args.supervised:
-
         gm_default.add_task('test_epoch.csv', fun=evaluate_classification, iterator=test_iterator,
                             metric_names=metrics, desc="Evaluate test ",
                             batch_size=args.eval_batch_size)
@@ -110,7 +104,7 @@ def train(args):
                 in_var.evidence)
             shape = (-1, num_rows, num_cols, num_dims)
             mosaic = impainting_mosaic(
-                reconstruction=tf.reshape(mpe_in_var, shape), truth=tf.reshape(truth, shape),
+                reconstruction=tf.reshape(completion_op, shape), truth=tf.reshape(truth, shape),
                 completion_indices=tf.reshape(completion_indices, shape), num_rows=4,
                 batch_size=args.completion_batch_size, invert=args.dataset == "mnist")
             mosaic_summary = tf.summary.image("Completion", mosaic)
@@ -154,13 +148,13 @@ def train(args):
                 if args.discrete:
                     feed_dict[truth] = image_batch
                 mpe_in_var_out, mosaic_summary_out, mosaic_out = sess.run(
-                    [mpe_in_var, mosaic_summary, mosaic], feed_dict=feed_dict)
+                    [completion_op, mosaic_summary, mosaic], feed_dict=feed_dict)
                 writer.add_summary(mosaic_summary_out, epoch)
                 reporter.write_image(
                     np.squeeze(mosaic_out, axis=0), 'completion/epoch_{}_{}.png'.format(
                         epoch, tag))
             else:
-                mpe_in_var_out = sess.run(mpe_in_var, feed_dict=feed_dict)
+                mpe_in_var_out = sess.run(completion_op, feed_dict=feed_dict)
 
             if not args.normalize_data:
                 mpe_in_var_out *= 255
@@ -168,27 +162,17 @@ def train(args):
             else:
                 orig = image_batch
 
-            hamming = np.equal(orig, mpe_in_var_out)[completion_ind]
-            max_fluctuation = args.num_vals ** 2 if args.discrete else 1.0
             l2 = np.square(orig - mpe_in_var_out)[completion_ind]
-            l1 = np.abs(orig - mpe_in_var_out)[completion_ind]
-            hamming = np.mean(hamming.reshape(len(orig), -1), axis=-1)
-            l2 = np.mean(l2.reshape(len(orig), -1), axis=-1)
-            l1 = np.mean(l1.reshape(len(orig), -1), axis=-1)
-            psnr = 10 * np.log10(max_fluctuation / l2)
-            tv = tv_norm(
-                mpe_in_var_out.reshape(-1, num_rows, num_cols, num_dims),
-                completion_ind.reshape(-1, num_rows, num_cols, num_dims))
-            return l1, l2, hamming, psnr, tv
+            return np.mean(l2.reshape(len(orig), -1), axis=-1)
 
         gm_default.add_task(
             "test_epoch.csv", fun=completion_bottom, iterator=test_iterator,
-            metric_names=['l1_b', 'l2_b', 'hamming_b', 'psnr_b', 'tv_b'],
-            desc='Completion bottom', batch_size=args.completion_batch_size)
+            metric_names=['l2_b'], desc='Completion bottom',
+            batch_size=args.completion_batch_size)
         gm_default.add_task(
             "test_epoch.csv", fun=completion_left, iterator=test_iterator,
-            metric_names=['l1_l', 'l2_l', 'hamming_l', 'psnr_l', 'tv_l'],
-            desc='Completion left  ', batch_size=args.completion_batch_size)
+            metric_names=['l2_l'], desc='Completion left  ',
+            batch_size=args.completion_batch_size)
 
     # Reporting total number of trainable variables
     trainable_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
@@ -201,7 +185,7 @@ def train(args):
     progress_history = deque(maxlen=5)
     progress_metric = 'loss' if args.supervised else 'likelihood'
     with tf.Session() as sess:
-        train_writer, test_writer = initialize_graph(init_weights, reporter, sess)
+        train_writer, test_writer = initialize_graph(reporter, sess)
         test_writer_left = reporter.tfwriter('test', 'completion', 'left', exist_ok=True)
         test_writer_bottom = reporter.tfwriter('test', 'completion', 'bottom', exist_ok=True)
 
@@ -244,12 +228,10 @@ def train(args):
             print("\nScales:\n", np.unique(scale))
 
 
-def initialize_graph(init_weights, reporter, sess):
-    accumulator_vars = tf.get_collection('em_accumulators')
-    init_accumulators = tf.group(*[v.initializer for v in accumulator_vars])
+def initialize_graph(reporter, sess):
     train_writer = reporter.tfwriter("train", graph=sess.graph)
     test_writer = reporter.tfwriter("test")
-    sess.run([init_accumulators, init_weights, tf.global_variables_initializer()])
+    sess.run(tf.global_variables_initializer())
     return train_writer, test_writer
 
 
@@ -315,7 +297,7 @@ def build_spn(args, num_dims, num_vars, train_x, train_y):
         'mnist': 28,
         'fashion_mnist': 28,
         'cifar10': 32,
-        'olivetti': 4,
+        'olivetti': 64,
         'caltech': 100
     }[args.dataset]
     if args.dataset == 'cifar10':
@@ -381,10 +363,7 @@ def setup_learning(args, in_var, root):
             root, value_inference_type=inference_type,
             initial_accum_value=args.initial_accum_value, sample_winner=args.sample_path,
             sample_prob=args.sample_prob, use_unweighted=args.use_unweighted)
-        accumulate = em_learning.accumulate_updates()
-        with tf.control_dependencies([accumulate]):
-            update_op = em_learning.update_spn()
-
+        update_op = em_learning.accumulate_and_update_weights()
         return correct, labels_node, labels_llh, no_labels_llh, update_op, class_mpe, no_op, \
                no_op, in_var_mpe
 
@@ -401,9 +380,9 @@ def setup_learning(args, in_var, root):
         marginalizing_root=root_marginalized, global_step=global_step)
 
     optimizer = {
-        'adam': tf.train.AdamOptimizer,
-        'rmsprop': tf.train.RMSPropOptimizer,
-        'amsgrad': AMSGrad,
+        'adam': lambda: tf.train.AdamOptimizer(learning_rate=args.learning_rate),
+        'rmsprop': lambda: tf.train.RMSPropOptimizer(learning_rate=args.learning_rate),
+        'amsgrad': lambda: AMSGrad(learning_rate=args.learning_rate),
     }[args.learning_algo]()
     minimize_op, _ = learning.learn(optimizer=optimizer)
 
@@ -418,18 +397,14 @@ def setup_learning(args, in_var, root):
 
 
 def load_data(args):
-    if args.dataset == "cifar10":
-        test_x, test_y, train_x, train_y = _read_cifar10()
-    elif args.dataset == "fashion_mnist":
-        test_x, test_y, train_x, train_y = _read_fashion_mnist()
-    elif args.dataset == "mnist":
-        test_x, test_y, train_x, train_y = _read_mnist()
-    elif args.dataset == "olivetti":
-        test_x, test_y, train_x, train_y = _read_olivetti()
-    elif args.dataset == "caltech":
-        test_x, test_y, train_x, train_y = _read_caltech()
-    else:
-        raise ValueError("Unknown dataset...")
+    test_x, test_y, train_x, train_y = {
+        'cifar10': load_cifar10,
+        'fashion_mnist': load_fashion_mnist,
+        'mnist': load_mnist,
+        'olivetti': load_olivetti,
+        'caltech': load_caltech
+    }[args.dataset](args)
+
     if args.class_subset:
         train_x = np.concatenate([train_x[train_y == c] for c in range(args.class_subset)])
         test_x = np.concatenate([test_x[test_y == c] for c in range(args.class_subset)])
@@ -439,15 +414,6 @@ def load_data(args):
     test_y = np.expand_dims(test_y, 1)
 
     num_classes = train_y.max() + 1
-    if args.novelty_detection:
-        train_y = np.where(np.isin(train_y, args.novel_classes), 0, 1)
-        test_y = np.where(np.isin(test_y, args.novel_classes), 0, 1)
-
-        # Novel classes in the train set can be moved to the test set
-        test_x = np.concatenate([test_x, train_x[train_y.ravel() == 0]], axis=0)
-        test_y = np.concatenate([test_y, train_y[train_y.ravel() == 0]], axis=0)
-        train_x = train_x[train_y.ravel() == 1]
-        train_y = train_y[train_y.ravel() == 1]
 
     train_x, train_y = shuffle(train_x, train_y, random_state=1234)
     test_x, test_y = shuffle(test_x, test_y, random_state=1234)
@@ -457,85 +423,6 @@ def load_data(args):
         test_x = np.clip(test_x, 0.01, 0.99)
 
     return test_x, test_y, train_x, train_y, num_classes
-
-
-def _read_fashion_mnist():
-    (train_x, train_y), (test_x, test_y) = tfk.datasets.fashion_mnist.load_data()
-    train_x = np.reshape(train_x / 255., (-1, 28, 28, 1))
-    test_x = np.reshape(test_x / 255., (-1, 28, 28, 1))
-    train_y = train_y.squeeze()
-    test_y = test_y.squeeze()
-    return test_x, test_y, train_x, train_y
-
-
-def _read_cifar10():
-    (train_x, train_y), (test_x, test_y) = tfk.datasets.cifar10.load_data()
-    train_x = train_x / 255.
-    test_x = test_x / 255.
-    train_y = train_y.squeeze()
-    test_y = test_y.squeeze()
-    return test_x, test_y, train_x, train_y
-
-
-def _read_mnist():
-    (train_x, train_y), (test_x, test_y) = tfk.datasets.mnist.load_data()
-    train_x = np.reshape(train_x / 255., (-1, 28, 28, 1))
-    test_x = np.reshape(test_x / 255., (-1, 28, 28, 1))
-    train_y = train_y.squeeze()
-    test_y = test_y.squeeze()
-
-    if args.discrete:
-        train_x = np.greater(train_x, 20 / 256).astype(np.int32)
-        test_x = np.greater(test_x, 20 / 256).astype(np.int32)
-
-    return test_x, test_y, train_x, train_y
-
-
-def _read_olivetti():
-    bunch = olivetti_faces.fetch_olivetti_faces()
-    x, y = np.expand_dims(bunch.images, axis=-1), bunch.target
-    train_x, train_y, test_x, test_y = [], [], [], []
-    for label in range(max(y) + 1):
-        x_class = x[y == label]
-        y_class = [label] * len(x_class)
-        # print(label, len(x_class))
-        test_size = min(30, len(x_class) // 3)
-        train_x.extend(x_class[:-test_size])
-        train_y.extend(y_class[:-test_size])
-        test_x.extend(x_class[-test_size:])
-        test_y.extend(y_class[-test_size:])
-    train_x, test_x, train_y, test_y = np.asarray(train_x), np.asarray(test_x), \
-                                       np.asarray(train_y), np.asarray(test_y)
-    if args.normalize_data:
-        return test_x * 255, test_y, train_x * 255, train_y
-    return test_x, test_y, train_x, train_y
-
-
-def _read_caltech():
-    base = opth.expanduser("~/datasets/caltech")
-    class_dirs = [d for d in os.listdir(base) if opth.isdir(opth.join(base, d))]
-    train_x, train_y, test_x, test_y = [], [], [], []
-    for label, cd in enumerate(class_dirs):
-        dirpath = opth.join(base, cd)
-        fnms = os.listdir(dirpath)
-        x = [np.loadtxt(opth.join(dirpath, fnm)) for fnm in fnms]
-        y = [label] * len(fnms)
-        test_size = min(50, len(fnms) // 3)
-        train_x.extend(x[:-test_size])
-        train_y.extend(y[:-test_size])
-        test_x.extend(x[-test_size:])
-        test_y.extend(y[-test_size:])
-
-    train_x = np.expand_dims(np.asarray(train_x), -1)
-    test_x = np.expand_dims(np.asarray(test_x), -1)
-    train_y = np.asarray(train_y)
-    test_y = np.asarray(test_y)
-
-    if not args.normalize_data:
-        train_x /= 255.
-        test_x /= 255.
-
-    return test_x, test_y, train_x, train_y
 
 
 def impainting_mosaic(reconstruction, truth, completion_indices, num_rows, batch_size,
@@ -576,15 +463,6 @@ def impainting_mosaic(reconstruction, truth, completion_indices, num_rows, batch
     alternating_rows = list(itertools.chain(*zip(truth_rows, reconstruction_rows)))
     return tf.expand_dims(tf.concat(alternating_rows, axis=0), 0)
 
-
-def tv_norm(x, completion_ind):
-    """Computes the total variation norm and its gradient. From jcjohnson/cnn-vis."""
-    x_diff = x - np.roll(x, -1, axis=2)
-    y_diff = x - np.roll(x, -1, axis=1)
-    grad_norm2 = x_diff ** 2 + y_diff ** 2
-    shape = (-1, int((x.size - np.sum(completion_ind)) / x.shape[0]))
-    norm = np.mean(np.sqrt(grad_norm2[completion_ind]).reshape(shape), axis=1)
-    return norm
 
 
 if __name__ == "__main__":
@@ -665,7 +543,7 @@ if __name__ == "__main__":
     params.add_argument("--lr_decay_rate", type=float, default=0.96)
     params.add_argument("--lr_decay_steps", type=int, default=100000)
 
-    params.set_defaults(novelty_detection=False, discrete=False, predict_each_epoch=False,
+    params.set_defaults(discrete=False, predict_each_epoch=False,
                         uniform_priors=False, reparam_weights=False, sparse_range=True,
                         share_scales=False, unnormalized_leafs=False, student_t=False,
                         fixed_mean=False, kwamy=False, depthwise_top=False, trainable_df=False,

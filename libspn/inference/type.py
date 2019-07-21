@@ -3,8 +3,8 @@ from enum import Enum
 
 class InferenceType(Enum):
     """Types of inference."""
-    MARGINAL = 0
+    MARGINAL = "marginal"
     """Use marginal inference."""
 
-    MPE = 1
+    MPE = "mpe"
     """Use MPE inference."""

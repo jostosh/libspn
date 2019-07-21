@@ -75,10 +75,10 @@ def configs():
         olivetti=[
             (combine_dicts(generative, olivetti_common, dict(name="Olivetti")), generative_grid)
         ],
-        caltech = [
+        caltech=[
             (combine_dicts(generative, caltech_common, dict(name="Caltech")), generative_grid)
         ],
-        cifar10 = [
+        cifar10=[
             (combine_dicts(discriminative, cifar10_common, dict(name="Cifar10_Discriminative")), discriminative_grid),
             (combine_dicts(discriminative, cifar10_common, augmentation,
                            dict(name="Cifar10_Generative_Augmented")), discriminative_grid)

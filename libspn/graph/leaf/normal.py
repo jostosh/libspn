@@ -142,7 +142,7 @@ class NormalLeaf(LocationScaleLeaf):
         batch_size = data.shape[0]
         quantile_sections = np.arange(
             batch_size // num_quantiles, batch_size, int(np.ceil(batch_size / num_quantiles)))
-        sorted_features = np.sort(data, axis=0).astype(tf.DType(conf.dtype).as_numpy_dtype())
+        sorted_features = np.sort(data, axis=0).astype(np.float32)
         values_per_quantile = np.split(
             sorted_features, indices_or_sections=quantile_sections, axis=0)
         return values_per_quantile
