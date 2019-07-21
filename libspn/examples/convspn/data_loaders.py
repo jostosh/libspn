@@ -3,9 +3,8 @@ from os import path as opth
 
 import numpy as np
 from sklearn.datasets import olivetti_faces
-import tensorflow as tf
+import tensorflow.python.keras as tfk
 
-tfk = tf.keras
 
 def load_fashion_mnist(args):
     (train_x, train_y), (test_x, test_y) = tfk.datasets.fashion_mnist.load_data()
