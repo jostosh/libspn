@@ -92,7 +92,8 @@ class HardEMLearning:
                     if self._l0_prior_factor is not None:
                         counts_summed_batch = tf.subtract(
                             counts_summed_batch, self._l0_prior_factor, "L0Prior")
-                    updated_counts = tf.nn.relu(pn.accum + counts_summed_batch)
+                    updated_counts = tf.maximum(
+                        pn.accum + counts_summed_batch, self._initial_accum_value)
                     assign_ops.append(tf.assign(pn.accum, updated_counts))
 
             for dn in self._loc_scale_leaf_nodes:

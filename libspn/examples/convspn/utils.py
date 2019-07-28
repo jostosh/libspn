@@ -1,4 +1,5 @@
-import tensorflow.python.keras as tfk
+import tensorflow as tf
+tfk = tf.keras
 import pandas as pd
 import os.path as opth
 import json

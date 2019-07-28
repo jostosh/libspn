@@ -48,6 +48,8 @@ def train(args):
         shear_range=args.shear_range, rotation_range=args.rotation_range,
         zoom_range=args.zoom_range, horizontal_flip=args.horizontal_flip,
         image_dims=(num_rows, num_cols))
+    args.l0_prior_factor = args.l0_prior_factor / train_augmented_iterator.num_batches()
+
     train_iterator = DataIterator(
         [train_x, train_y], batch_size=args.batch_size, shuffle=True)
     test_iterator = DataIterator(
@@ -300,8 +302,9 @@ def build_spn(args, num_dims, num_vars, train_x, train_y):
         'olivetti': 64,
         'caltech': 100
     }[args.dataset]
-    if args.dataset == 'cifar10':
-        in_var_ = spn.LocalSums(in_var, num_channels=args.sum_num_c0, spatial_dim_sizes=[32, 32])
+    if args.dataset == 'cifar10' or args.first_local_sum:
+        in_var_ = spn.LocalSums(in_var, num_channels=args.sum_num_c0,
+                                spatial_dim_sizes=[edge_size, edge_size])
     else:
         in_var_ = in_var
 
@@ -362,7 +365,8 @@ def setup_learning(args, in_var, root):
         em_learning = spn.HardEMLearning(
             root, value_inference_type=inference_type,
             initial_accum_value=args.initial_accum_value, sample_winner=args.sample_path,
-            sample_prob=args.sample_prob, use_unweighted=args.use_unweighted)
+            sample_prob=args.sample_prob, use_unweighted=args.use_unweighted,
+            l0_prior_factor=args.l0_prior_factor, additive_smoothing=args.additive_smoothing)
         update_op = em_learning.accumulate_and_update_weights()
         return correct, labels_node, labels_llh, no_labels_llh, update_op, class_mpe, no_op, \
                no_op, in_var_mpe
@@ -464,7 +468,6 @@ def impainting_mosaic(reconstruction, truth, completion_indices, num_rows, batch
     return tf.expand_dims(tf.concat(alternating_rows, axis=0), 0)
 
 
-
 if __name__ == "__main__":
     params = ArgumentParser()
     params.add_argument("--log_base_path", default='logs')
@@ -490,6 +493,7 @@ if __name__ == "__main__":
     params.add_argument("--num_epochs", default=500, type=int)
     params.add_argument("--input_dropout", default=None, type=float)
     params.add_argument("--first_depthwise", action='store_true', dest='first_depthwise')
+    params.add_argument("--additive_smoothing", type=float, default=None)
 
     params.add_argument("--class_subset", default=None, type=int)
     params.add_argument("--dataset", default="mnist",
@@ -507,6 +511,8 @@ if __name__ == "__main__":
     params.add_argument("--sum_num_c2", default=64, type=int)
     params.add_argument("--sum_num_c3", default=64, type=int)
     params.add_argument("--sum_num_c4", default=64, type=int)
+
+    params.add_argument("--first_local_sum", action="store_true", dest="first_local_sum")
 
     params.add_argument("--initial_accum_value", type=float, default=1e-4)
     params.add_argument("--sample_path", action="store_true", dest="sample_path")
@@ -542,6 +548,8 @@ if __name__ == "__main__":
 
     params.add_argument("--lr_decay_rate", type=float, default=0.96)
     params.add_argument("--lr_decay_steps", type=int, default=100000)
+
+    params.add_argument("--l0_prior_factor", type=float, default=1.0)
 
     params.set_defaults(discrete=False, predict_each_epoch=False,
                         uniform_priors=False, reparam_weights=False, sparse_range=True,
