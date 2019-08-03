@@ -20,12 +20,12 @@ class MPEPath:
                     if ``value`` is given.
     """
 
-    def __init__(self, value=None, value_inference_type=None, log=True, use_unweighted=False,
+    def __init__(self, value=None, value_inference_type=None, log=True, unweighted=False,
                  sample=False, sample_prob=None, matmul_or_conv=False):
         self._true_counts = {}
         self._actual_counts = {}
         self._log = log
-        self._use_unweighted = use_unweighted
+        self._unweighted = unweighted
         self._sample = sample
         self._sample_prob = sample_prob
         # Create internal value generator
@@ -57,7 +57,7 @@ class MPEPath:
         def down_fun(node, parent_vals):
             self._true_counts[node] = summed = self._accumulate_parents(*parent_vals)
             basesum_kwargs = dict(
-                use_unweighted=self._use_unweighted, sample=self._sample,
+                unweighted=self._unweighted, sample=self._sample,
                 sample_prob=self._sample_prob)
             if node.is_op:
                 kwargs = basesum_kwargs if isinstance(node, BaseSum) else dict()

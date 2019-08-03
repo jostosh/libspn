@@ -18,7 +18,7 @@ class MPEState:
         # Create internal MPE path generator
         if mpe_path is None:
             self._mpe_path = MPEPath(log=log, value_inference_type=value_inference_type,
-                                     use_unweighted=False, matmul_or_conv=matmul_or_conv)
+                                     unweighted=False, matmul_or_conv=matmul_or_conv)
         else:
             self._mpe_path = mpe_path
 

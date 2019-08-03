@@ -250,9 +250,9 @@ class BlockSum(BlockNode):
     @utils.docinherit(OpNode)
     @utils.lru_cache
     def _compute_log_mpe_path(self, counts, w_tensor, latent_indicator_tensor, child_log_prob,
-                              use_unweighted=False, sum_weight_grads=False, sample=False,
+                              unweighted=False, sum_weight_grads=False, sample=False,
                               sample_prob=None):
-        if use_unweighted:
+        if unweighted:
             winning_indices = utils.argmax_breaking_ties(
                 self._compute_apply_latent_indicators(child_log_prob, latent_indicator_tensor),
                 num_samples=self.child.dim_nodes, keepdims=True)

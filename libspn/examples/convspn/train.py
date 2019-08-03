@@ -61,7 +61,7 @@ def train(args):
         initializer=tf.initializers.random_uniform(args.weight_init_min, args.weight_init_max))
 
     correct, labels_node, loss, likelihood, update_op, pred_op, reg_loss, loss_per_sample, \
-        completion_op = setup_learning(args, in_var, root)
+        completion_op, update_commit, reset_op = setup_learning(args, in_var, root)
 
     # Set up the evaluation tasks
     def evaluate_classification(image_batch, labels_batch, epoch, step):
@@ -184,8 +184,18 @@ def train(args):
     logger.info("Num trainable parameters = {}".format(total_trainable_parameters))
 
     # Remember five last metrics for determining stop criterion
-    progress_history = deque(maxlen=5)
+    progress_history = deque(maxlen=2)
     progress_metric = 'loss' if args.supervised else 'likelihood'
+
+    if args.update_period_unit is not None:
+        if args.update_period_unit == "epoch":
+            update_period_steps = train_augmented_iterator.num_batches() * args.update_period_value
+        else:
+            update_period_steps = args.update_period_value
+    else:
+        update_period_steps = 1
+
+
     with tf.Session() as sess:
         train_writer, test_writer = initialize_graph(reporter, sess)
         test_writer_left = reporter.tfwriter('test', 'completion', 'left', exist_ok=True)
@@ -212,14 +222,21 @@ def train(args):
                 if args.supervised:
                     feed_dict[labels_node] = labels_batch
                 sess.run(update_op, feed_dict=feed_dict)
+
+                total_step = epoch * train_augmented_iterator.num_batches() + train_augmented_iterator.step
+                if update_period_steps > 1 and (total_step + 1) % update_period_steps == 0:
+                    sess.run(update_commit, feed_dict=feed_dict)
                         
             # Check stopping criterion
             progress_epoch = gm_default.evaluate_one_epoch(epoch + 1)[progress_metric]
             progress_history.append(progress_epoch)
-            if len(progress_history) == 5 and np.std(progress_history) < args.stop_epsilon or \
-                np.isnan(progress_epoch) or progress_epoch == 0.0:
+            if len(progress_history) == 2 and np.abs(progress_history[0] - progress_history[1]) < args.stop_epsilon or \
+                    np.isnan(progress_epoch):
                 print("Stopping criterion reached!")
                 break
+
+            if args.reset_per_epoch:
+                sess.run(reset_op)
 
         # Store locations and scales
         if not args.discrete:
@@ -261,6 +278,7 @@ def build_spn(args, num_dims, num_vars, train_x, train_y):
                 share_scales=args.share_scales, share_locs_across_vars=args.share_locs,
                 loc_init=Equidistant(-2.0, 2.0) if args.normalize_data else Equidistant(),
                 samplewise_normalization=args.normalize_data,
+                total_counts_init=args.total_counts_init,
                 **kwargs)
         else:
             LeafDist = {
@@ -364,12 +382,19 @@ def setup_learning(args, in_var, root):
     if args.learning_algo == "em":
         em_learning = spn.HardEMLearning(
             root, value_inference_type=inference_type,
-            initial_accum_value=args.initial_accum_value, sample_winner=args.sample_path,
-            sample_prob=args.sample_prob, use_unweighted=args.use_unweighted,
+            minimal_value_multiplier=args.minimal_value_mutliplier, sample_winner=args.sample_path,
+            sample_prob=args.sample_prob, unweighted=args.use_unweighted,
             l0_prior_factor=args.l0_prior_factor, additive_smoothing=args.additive_smoothing)
-        update_op = em_learning.accumulate_and_update_weights()
-        return correct, labels_node, labels_llh, no_labels_llh, update_op, class_mpe, no_op, \
-               no_op, in_var_mpe
+
+        if args.update_period_unit is not None and not (
+            args.update_period_unit == "step" and args.update_period_value == 1):
+            update_accumulate = em_learning.accumulate_updates()
+            update_commit = em_learning.update_spn()
+        else:
+            update_accumulate = em_learning.accumulate_and_update_weights()
+            update_commit = no_op
+        return correct, labels_node, labels_llh, no_labels_llh, update_accumulate, class_mpe, no_op, \
+           no_op, in_var_mpe, update_commit, em_learning.reset_accumulators()
 
     logger.info("Setting up GD learning")
     global_step = tf.Variable(0, trainable=False)
@@ -476,6 +501,7 @@ if __name__ == "__main__":
     params.add_argument(
         "--learning_algo", default='amsgrad', choices=['amsgrad', 'adam', 'rmsprop', 'em'])
 
+    params.add_argument("--total_counts_init", default=1.0, type=float)
     params.add_argument("--num_components", default=4, type=int)
     params.add_argument("--fixed_variance", action='store_true', dest='fixed_variance')
     params.add_argument("--fixed_mean", action="store_true", dest='fixed_mean')
@@ -514,7 +540,7 @@ if __name__ == "__main__":
 
     params.add_argument("--first_local_sum", action="store_true", dest="first_local_sum")
 
-    params.add_argument("--initial_accum_value", type=float, default=1e-4)
+    params.add_argument("--minimal_value_mutliplier", type=float, default=1e-4)
     params.add_argument("--sample_path", action="store_true", dest="sample_path")
     params.add_argument("--sample_prob", type=float, default=None)
     params.add_argument("--use_unweighted", action="store_true", dest="use_unweighted")
@@ -543,13 +569,18 @@ if __name__ == "__main__":
 
     params.add_argument("--normalize_data", action="store_true", dest="normalize_data")
 
+    params.add_argument("--update_period_unit", default=None, choices=['epoch', 'step'])
+    params.add_argument("--update_period_value", default=1, type=int)
+
+    params.add_argument("--reset_per_epoch", action="store_true", dest='reset_per_epoch')
+
     params.add_argument("--completion_by_marginal", action="store_true",
                         dest="completion_by_marginal")
 
     params.add_argument("--lr_decay_rate", type=float, default=0.96)
     params.add_argument("--lr_decay_steps", type=int, default=100000)
 
-    params.add_argument("--l0_prior_factor", type=float, default=1.0)
+    params.add_argument("--l0_prior_factor", type=float, default=0.0)
 
     params.set_defaults(discrete=False, predict_each_epoch=False,
                         uniform_priors=False, reparam_weights=False, sparse_range=True,
@@ -559,7 +590,7 @@ if __name__ == "__main__":
                         supervised=True, estimate_scale=False, only_root_marginalize=False,
                         normalize_data=False, tensor_spn=False, fixed_variance=False,
                         log_weights=False, equidistant_means=False, first_depthwise=False,
-                        sample_path=False, use_unweighted=False)
+                        sample_path=False, use_unweighted=False, reset_per_epoch=False)
     args = params.parse_args()
     pprint.pprint(vars(args))
     train(args)

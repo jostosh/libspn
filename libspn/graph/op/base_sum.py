@@ -10,6 +10,7 @@ import libspn.utils as utils
 from libspn.log import get_logger
 from itertools import chain
 import tensorflow as tf
+import tensorflow_probability as tfp
 
 
 @utils.register_serializable
@@ -355,7 +356,7 @@ class BaseSum(OpNode, abc.ABC):
     @utils.lru_cache
     def _compute_mpe_path_common(
         self, reducible_tensor, counts, w_tensor, latent_indicators_tensor, *input_tensors,
-        sample=False, sample_prob=None, accumulate_weights_batch=False):
+        sample=False, sample_prob=None, accumulate_weights_batch=False, unweighted=False):
         """Common operations for computing the MPE path.
 
         Args:
@@ -379,7 +380,8 @@ class BaseSum(OpNode, abc.ABC):
         num_samples = 1 if reducible_tensor.shape[self._reduce_axis] != 1 else self._num_sums
         if sample:
             max_indices = self._reduce_sample_log(
-                reducible_tensor, sample_prob=sample_prob, num_samples=num_samples)
+                reducible_tensor, sample_prob=sample_prob, num_samples=num_samples,
+                unweighted=unweighted)
         else:
             max_indices = self._reduce_argmax(reducible_tensor, num_samples=num_samples)
         max_counts = utils.scatter_values(
@@ -420,16 +422,16 @@ class BaseSum(OpNode, abc.ABC):
     @utils.docinherit(OpNode)
     @utils.lru_cache
     def _compute_log_mpe_path(self, counts, w_tensor, latent_indicators_tensor, *input_tensors,
-                              use_unweighted=False,
+                              unweighted=False,
                               accumulate_weights_batch=False, sample=False, sample_prob=None):
-        weighted = not use_unweighted or any(v.node.is_var for v in self._values)
+        weighted = not unweighted or any(v.node.is_var for v in self._values)
         reducible = self._compute_reducible(
             w_tensor, latent_indicators_tensor, *input_tensors, weighted=weighted)
 
         return self._compute_mpe_path_common(
             reducible, counts, w_tensor, latent_indicators_tensor, *input_tensors,
             accumulate_weights_batch=accumulate_weights_batch, sample=sample,
-            sample_prob=sample_prob)
+            sample_prob=sample_prob, unweighted=unweighted)
 
     @property
     def _tile_unweighted_size(self):
@@ -600,7 +602,7 @@ class BaseSum(OpNode, abc.ABC):
         if self._masked:
             x_eq_max *= tf.expand_dims(tf.cast(self._build_mask(), tf.float32),
                                        axis=self._batch_axis)
-        sample = self.multinomial_sample(tf.log(x_eq_max), num_samples)
+        sample = tfp.distributions.Categorical(probs=x_eq_max).sample()
         return sample
 
     @staticmethod
@@ -612,7 +614,7 @@ class BaseSum(OpNode, abc.ABC):
             return tf.transpose(sample, list(range(1, len(sample.shape))) + [0])
 
     @utils.lru_cache
-    def _reduce_sample_log(self, logits, sample_prob=None, num_samples=1):
+    def _reduce_sample_log(self, logits, sample_prob=None, num_samples=1, unweighted=False):
         """Samples a tensor with log likelihoods, i.e. sample(x, axis=reduce_axis)).
 
         Args:
@@ -624,15 +626,21 @@ class BaseSum(OpNode, abc.ABC):
         Returns:
             A ``Tensor`` reduced over the last axis.
         """
-
         # Categorical eventually uses non-log probabilities, so here we reuse as much as we can to
         # predetermine it
         def _sample():
-            sample = self.multinomial_sample(logits, num_samples=num_samples)
-            return sample
+            if unweighted:
+                return tf.transpose(
+                    tfp.distributions.Categorical(logits=logits).sample(
+                        sample_shape=(num_samples,)),
+                    perm=list(range(1, len(logits.shape) - 1)) + [0]
+                )
+
+            return tfp.distributions.Categorical(logits=logits).sample()
 
         def _select_sample_or_argmax(x):
-            mask = tf.less(tf.random_uniform(tf.shape(x)), sample_prob)
+            mask = tfp.distributions.Bernoulli(
+                probs=sample_prob, dtype=tf.bool).sample(sample_shape=tf.shape(x))
             return tf.where(mask, x, self._reduce_argmax(logits, num_samples=num_samples))
 
         if sample_prob is not None:
@@ -649,16 +657,3 @@ class BaseSum(OpNode, abc.ABC):
             return _select_sample_or_argmax(_sample())
         else:
             return _sample()
-
-    @utils.lru_cache
-    def multinomial_sample(self, logits, num_samples):
-        shape = tf.shape(logits)
-        last_dim = shape[-1]
-        logits = tf.reshape(logits, (-1, last_dim))
-        sample = tf.multinomial(logits, num_samples)
-
-        if self._tile_unweighted_size == num_samples and self._max_sum_size > 1:
-            shape = tf.concat((shape[:-1], [num_samples]), axis=0)
-            return tf.squeeze(tf.reshape(sample, shape), axis=self._reduce_axis - 1)
-
-        return tf.reshape(sample, shape[:-1])

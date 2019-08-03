@@ -224,8 +224,7 @@ class PermuteProducts(OpNode):
         return self._compute_log_value(*value_tensors)
 
     @utils.lru_cache
-    def _compute_log_mpe_path(self, counts, *value_values, use_unweighted=False,
-                              sample=False, sample_prob=None):
+    def _compute_log_mpe_path(self, counts, *value_values):
         # Path per product node is calculated by permuting backwards to the
         # input nodes, then adding the appropriate counts per input, and then
         # scattering the summed counts to value inputs

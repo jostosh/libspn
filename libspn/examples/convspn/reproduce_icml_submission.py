@@ -9,7 +9,7 @@ def configs():
     generative = dict(
         unsupervised=True,
         learning_algo="em",
-        batch_size=1,
+        batch_size=16,
         completion=True,
         completion_by_marginal=True,
         dist='normal',
@@ -18,16 +18,15 @@ def configs():
         sum_num_c0=64, sum_num_c1=64, sum_num_c2=64, sum_num_c3=64, sum_num_c4=64,
         estimate_scale=True,
         normalize_data=True,
-        num_epochs=100
+        num_epochs=100,
+        stop_epsilon=1e-2
     )
 
     generative_olivetti_poon = dict(
         unsupervised=True,
-        # first_local_sum=True,
-        # first_depthwise=True,
         learning_algo='em',
         batch_size=16,
-        num_epochs=5,
+        num_epochs=25,
         completion=True,
         completion_by_marginal=True,
         dist='normal',
@@ -40,21 +39,29 @@ def configs():
         fixed_variance=True,
         weight_init_min=1.0,
         weight_init_max=1.0,
+        minimal_value_mutliplier=1e-4,
+        stop_epsilon=1e-1,
+        # update_period_unit="step",
+        # update_period_value=8,
+        total_counts_init=100,
     )
+
+    generative_half_size = dict(
+        sum_num_c0=16, sum_num_c1=16, sum_num_c2=16, sum_num_c3=16, sum_num_c4=16)
 
     generative_train_leafs = dict(
         fixed_mean=False,
-        fixed_variance=False,
-        equidistant_means=True
-    )
-
-    generative_initial_accum = dict(
-        initial_accum_value=1e-4
+        fixed_variance=False
     )
 
     generative_additive_smoothing = dict(
-        additive_smoothing=1e-4,
-        initial_accum_value=0.0
+        additive_smoothing=1e-2,
+        minimal_value_mutliplier=0.0
+    )
+
+    generative_additive_smoothing1 = dict(
+        additive_smoothing=1.0,
+        minimal_value_mutliplier=0.0
     )
 
     generative_l0_prior = dict(
@@ -66,15 +73,19 @@ def configs():
     )
 
     generative_sampling = dict(
-        sample_prob=0.25,
-        sample_path=True,
-        # batch_size=12
+        sample_prob=0.1,
+        sample_path=True
     )
 
-    generative_olivetti_grid = OrderedDict(
-        l0_prior_factor=[1e-1, 1.0, 10.0]
+    generative_sampling_05 = dict(
+        sample_prob=0.5,
+        sample_path=True
     )
-    
+
+    singleton_batch = dict(
+        batch_size=1
+    )
+
     discriminative = dict(
         unsupervised=False,
         learning_algo='amsgrad',
@@ -111,7 +122,6 @@ def configs():
     olivetti_common = dict(dataset='olivetti', num_components=4)
     caltech_common = dict(dataset='caltech', num_components=8)
     cifar10_common = dict(dataset='cifar10', num_components=32, first_depthwise=True)
-    
     return dict(
         mnist=[
             (combine_dicts(generative, mnist_common, dict(name="MNIST_Generative")), generative_grid),
@@ -127,37 +137,100 @@ def configs():
                            dict(name="FashionMNIST_Discriminative_Augmented")), discriminative_grid)
         ],
         olivetti=[
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, dict(name="Base")), None),
             # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_additive_smoothing, dict(name="Base")), None),
+            #                generative_additive_smoothing, dict(name="AdditiveSmoothing")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_additive_smoothing1, dict(name="AdditiveSmoothing1")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_l0_prior,
+            #                dict(name="L0Prior")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_use_unweighted, dict(name="Unweighted")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_sampling, dict(name="Sampling")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_train_leafs, dict(name="TrainMeans")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_train_leafs, dict(name="TrainMeansAndScales")), None),
+            (combine_dicts(generative_olivetti_poon, olivetti_common,
+                           generative_train_leafs, singleton_batch,
+                           dict(name="TrainMeansAndScalesSingleton")), None),
+            (combine_dicts(generative_olivetti_poon, olivetti_common,
+                           generative_train_leafs, singleton_batch, generative_use_unweighted,
+                           dict(name="TrainMeansAndScalesSingletonUnweighted")), None),
+            (combine_dicts(generative_olivetti_poon, olivetti_common,
+                           generative_train_leafs, singleton_batch, generative_sampling_05,
+                           dict(name="TrainMeansAndScalesSingletonSampling")), None),
+            (combine_dicts(generative_olivetti_poon, olivetti_common,
+                           generative_train_leafs, singleton_batch, generative_sampling_05,
+                           generative_use_unweighted,
+                           dict(name="TrainMeansAndScalesSingletonSamplingUnweighted")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_half_size, dict(name="HalfSize")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_use_unweighted,
+            #                generative_additive_smoothing, dict(name="AdditiveSmoothingUnweighted")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_l0_prior,
+            #                generative_use_unweighted, dict(name="UnweightedL0")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_l0_prior,
+            #                generative_additive_smoothing, dict(name="AdditiveSmoothingL0")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_l0_prior,
+            #                generative_use_unweighted,
+            #                generative_additive_smoothing, dict(name="AdditiveSmoothingL0Unweighted")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, offline_em,
+            #                generative_use_unweighted, dict(name="Unweighted")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_sampling,
+            #                generative_train_leafs, dict(name="TrainLeaves")), None),
             # (combine_dicts(generative_olivetti_poon, olivetti_common,
             #                generative_additive_smoothing, generative_l0_prior,
-            #                dict(name="L0Prior")), None),
-            (combine_dicts(generative_olivetti_poon, olivetti_common, generative_additive_smoothing,
-                           generative_sampling, dict(name="Sampling")), None),
-            (combine_dicts(generative_olivetti_poon, olivetti_common, generative_additive_smoothing,
-                           generative_use_unweighted, dict(name="Unweighted")), None),
-            (combine_dicts(generative_olivetti_poon, olivetti_common, generative_additive_smoothing,
-                           generative_train_leafs, dict(name="TrainLeaves")), None),
-            (combine_dicts(generative_olivetti_poon, olivetti_common,
-                           generative_additive_smoothing, generative_l0_prior,
-                           generative_use_unweighted, generative_sampling,
-                           dict(name="AllNoTrainLeaves")), None),
-            (combine_dicts(generative_olivetti_poon, olivetti_common,
-                           generative_additive_smoothing, generative_l0_prior,
-                           generative_use_unweighted,
-                           generative_train_leafs, dict(name="AllNoSampling")), None),
-            (combine_dicts(generative_olivetti_poon, olivetti_common,
-                           generative_additive_smoothing, generative_l0_prior,
-                           generative_sampling,
-                           generative_train_leafs, dict(name="AllNoUnweighted")), None),
-            (combine_dicts(generative_olivetti_poon, olivetti_common,
-                           generative_additive_smoothing,
-                           generative_sampling, generative_use_unweighted,
-                           generative_train_leafs, dict(name="AllNoL0Prior")), None),
-            (combine_dicts(generative_olivetti_poon, olivetti_common,
-                           generative_additive_smoothing, generative_l0_prior,
-                           generative_use_unweighted, generative_sampling,
-                           generative_train_leafs, dict(name="All")), None)
+            #                generative_use_unweighted, generative_sampling,
+            #                dict(name="AllNoTrainLeaves")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_additive_smoothing, generative_l0_prior,
+            #                generative_use_unweighted,
+            #                generative_train_leafs, dict(name="AllNoSampling")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_additive_smoothing, generative_l0_prior,
+            #                generative_sampling,
+            #                generative_train_leafs, dict(name="AllNoUnweighted")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_additive_smoothing,
+            #                generative_sampling, generative_use_unweighted,
+            #                generative_train_leafs, dict(name="AllNoL0Prior")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_additive_smoothing, generative_l0_prior,
+            #                generative_use_unweighted, generative_sampling,
+            #                generative_train_leafs, dict(name="All")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_initial_accum, generative_l0_prior,
+            #                generative_use_unweighted, generative_sampling,
+            #                dict(name="AllNoTrainLeavesIA")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_initial_accum, generative_l0_prior,
+            #                generative_use_unweighted,
+            #                generative_train_leafs, dict(name="AllNoSamplingIA")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_initial_accum, generative_l0_prior,
+            #                generative_sampling,
+            #                generative_train_leafs, dict(name="AllNoUnweightedIA")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_initial_accum,
+            #                generative_sampling, generative_use_unweighted,
+            #                generative_train_leafs, dict(name="AllNoL0PriorIA")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_initial_accum, generative_l0_prior,
+            #                generative_use_unweighted, generative_sampling,
+            #                generative_train_leafs, dict(name="AllIA")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            #                generative_initial_accum, generative_l0_prior,
+            #                dict(name="L0PriorIA")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_initial_accum,
+            #                generative_sampling, generative_train_leafs,
+            #                dict(name="SamplingIA")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_initial_accum,
+            #                generative_use_unweighted, dict(name="UnweightedIA")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_initial_accum,
+            #                generative_train_leafs, dict(name="TrainLeavesIA")), None),
         ],
         caltech=[
             (combine_dicts(generative, caltech_common, dict(name="Caltech")), generative_grid)
@@ -170,8 +243,12 @@ def configs():
     )
 
 
+
 def combine_dicts(*ds):
-    return {k: v for k, v in itertools.chain(*[d.items() for d in ds])}
+    out_dict = dict()
+    for d in ds:
+        out_dict.update(d)
+    return out_dict
 
 
 def key_val_to_arg(k, v):

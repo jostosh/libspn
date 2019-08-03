@@ -213,7 +213,7 @@ class SpatialSums(BaseSum, abc.ABC):
     @utils.docinherit(BaseSum)
     def _compute_mpe_path_common(
             self, reducible_log_prob, counts, w_log_prob, latent_indicator_log_prob, *child_log_prob,
-            sample=False, sample_prob=None, accumulate_weights_batch=False, use_unweighted=False):
+            sample=False, sample_prob=None, accumulate_weights_batch=False, unweighted=False):
         """Common operations for computing the MPE path.
 
         Args:
@@ -234,7 +234,8 @@ class SpatialSums(BaseSum, abc.ABC):
         num_samples = 1 if reducible_log_prob.shape[self._channel_axis] != 1 else self._num_channels
         if sample:
             max_indices = self._reduce_sample_log(
-                reducible_log_prob, sample_prob=sample_prob, num_samples=num_samples)
+                reducible_log_prob, sample_prob=sample_prob, num_samples=num_samples,
+                unweighted=unweighted)
         else:
             max_indices = self._reduce_argmax(reducible_log_prob, num_samples=num_samples)
         max_indices = tf.reshape(max_indices, (-1, self._compute_out_size()))

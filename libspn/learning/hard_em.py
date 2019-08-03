@@ -24,20 +24,20 @@ class HardEMLearning:
         "LocationScaleLeafNode", ["node", "name_scope", "accum", "sum_data", "sum_data_squared"])
 
     def __init__(self, root, mpe_path=None, log=True, value_inference_type=None,
-                 additive_smoothing=None, initial_accum_value=1.0,
-                 use_unweighted=False, sample_winner=False, sample_prob=None,
+                 additive_smoothing=None, minimal_value_multiplier=1e-4,
+                 unweighted=False, sample_winner=False, sample_prob=None,
                  matmul_or_conv=False, l0_prior_factor=None):
         self._root = root
         self._log = log
         self._additive_smoothing = additive_smoothing
-        self._initial_accum_value = initial_accum_value
+        self._minimal_value_multiplier = minimal_value_multiplier
         self._sample_winner = sample_winner
         self._l0_prior_factor = l0_prior_factor
         # Create internal MPE path generator
         if mpe_path is None:
             self._mpe_path = MPEPath(
                 log=log, value_inference_type=value_inference_type,
-                use_unweighted=use_unweighted, sample=sample_winner, sample_prob=sample_prob,
+                unweighted=unweighted, sample=sample_winner, sample_prob=sample_prob,
                 matmul_or_conv=matmul_or_conv)
         else:
             self._mpe_path = mpe_path
@@ -93,7 +93,7 @@ class HardEMLearning:
                         counts_summed_batch = tf.subtract(
                             counts_summed_batch, self._l0_prior_factor, "L0Prior")
                     updated_counts = tf.maximum(
-                        pn.accum + counts_summed_batch, self._initial_accum_value)
+                        pn.accum + counts_summed_batch, self._minimal_value_multiplier / tf.constant(pn.node.num_weights, dtype=tf.float32))
                     assign_ops.append(tf.assign(pn.accum, updated_counts))
 
             for dn in self._loc_scale_leaf_nodes:
@@ -141,35 +141,34 @@ class HardEMLearning:
         def fun(node):
             if node.is_param:
                 with tf.name_scope(node.name) as scope:
-                    if self._initial_accum_value is not None:
+                    if self._minimal_value_multiplier is not None:
                         if node.mask and not all(node.mask):
                             accum = tf.Variable(tf.cast(tf.reshape(node.mask,
                                                                    node.variable.shape),
                                                         dtype=conf.dtype) *
-                                                self._initial_accum_value,
+                                                self._minimal_value_multiplier / tf.constant(node.num_weights, dtype=tf.float32),
                                                 dtype=conf.dtype)
                         else:
                             accum = tf.Variable(tf.ones_like(node.variable,
                                                              dtype=conf.dtype) *
-                                                self._initial_accum_value,
+                                                self._minimal_value_multiplier / tf.constant(node.num_weights, dtype=tf.float32),
                                                 dtype=conf.dtype)
                     else:
                         accum = tf.Variable(tf.zeros_like(node.variable,
                                                           dtype=conf.dtype),
                                             dtype=conf.dtype)
-                    param_node = HardEMLearning.ParamNode(node=node, accum=accum,
-                                                      name_scope=scope)
+                    param_node = HardEMLearning.ParamNode(node=node, accum=accum, name_scope=scope)
                     self._param_nodes.append(param_node)
             if isinstance(node, LocationScaleLeaf) and (node.trainable_scale or node.trainable_loc):
                 with tf.name_scope(node.name) as scope:
-                    if self._initial_accum_value is not None:
+                    if self._minimal_value_multiplier is not None:
                         accum = tf.Variable(tf.ones_like(node.loc_variable, dtype=conf.dtype) *
-                                            self._initial_accum_value,
+                                            self._minimal_value_multiplier,
                                             dtype=conf.dtype)
-                        sum_x = tf.Variable(node.loc_variable * self._initial_accum_value,
+                        sum_x = tf.Variable(node.loc_variable * self._minimal_value_multiplier,
                                             dtype=conf.dtype)
                         sum_x2 = tf.Variable(tf.square(node.loc_variable) *
-                                             self._initial_accum_value,
+                                             self._minimal_value_multiplier,
                                              dtype=conf.dtype)
                     else:
                         accum = tf.Variable(tf.zeros_like(node.loc_variable, dtype=conf.dtype),

@@ -173,7 +173,7 @@ class TestNodesSumsLayer(tf.test.TestCase):
 
         # Then build MPE path Ops
         mpe_path_gen = spn.MPEPath(
-            value_inference_type=inf_type, log=True, use_unweighted=use_unweighted)
+            value_inference_type=inf_type, log=True, unweighted=use_unweighted)
         mpe_path_gen.get_mpe_path(root)
         path_op = [mpe_path_gen.counts[node] for node in [weight_node] + input_nodes + latent_indicators_nodes]
 
