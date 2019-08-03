@@ -121,7 +121,7 @@ class HardEMLearning:
                 with tf.name_scope(pn.name_scope):
                     accum = pn.accum
                     if self._additive_smoothing is not None:
-                        accum = tf.add(accum, self._additive_smoothing)
+                        accum = tf.add(accum, self._additive_smoothing / tf.constant(pn.node.num_weights, dtype=tf.float32))
                     if pn.node.log:
                         assign_ops.append(pn.node.assign_log(tf.log(accum)))
                     else:

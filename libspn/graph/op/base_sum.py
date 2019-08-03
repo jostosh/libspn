@@ -380,8 +380,7 @@ class BaseSum(OpNode, abc.ABC):
         num_samples = 1 if reducible_tensor.shape[self._reduce_axis] != 1 else self._num_sums
         if sample:
             max_indices = self._reduce_sample_log(
-                reducible_tensor, sample_prob=sample_prob, num_samples=num_samples,
-                unweighted=unweighted)
+                reducible_tensor, sample_prob=sample_prob, num_samples=num_samples)
         else:
             max_indices = self._reduce_argmax(reducible_tensor, num_samples=num_samples)
         max_counts = utils.scatter_values(
@@ -602,19 +601,11 @@ class BaseSum(OpNode, abc.ABC):
         if self._masked:
             x_eq_max *= tf.expand_dims(tf.cast(self._build_mask(), tf.float32),
                                        axis=self._batch_axis)
-        sample = tfp.distributions.Categorical(probs=x_eq_max).sample()
-        return sample
 
-    @staticmethod
-    def sample_and_transpose(d, sample_shape):
-        sample = d.sample(sample_shape=sample_shape)
-        if sample_shape == ():
-            return sample
-        else:
-            return tf.transpose(sample, list(range(1, len(sample.shape))) + [0])
+        return self.categorical_sample(tf.log(x_eq_max), num_samples)
 
     @utils.lru_cache
-    def _reduce_sample_log(self, logits, sample_prob=None, num_samples=1, unweighted=False):
+    def _reduce_sample_log(self, logits, sample_prob=None, num_samples=1):
         """Samples a tensor with log likelihoods, i.e. sample(x, axis=reduce_axis)).
 
         Args:
@@ -626,21 +617,15 @@ class BaseSum(OpNode, abc.ABC):
         Returns:
             A ``Tensor`` reduced over the last axis.
         """
+
         # Categorical eventually uses non-log probabilities, so here we reuse as much as we can to
         # predetermine it
         def _sample():
-            if unweighted:
-                return tf.transpose(
-                    tfp.distributions.Categorical(logits=logits).sample(
-                        sample_shape=(num_samples,)),
-                    perm=list(range(1, len(logits.shape) - 1)) + [0]
-                )
-
-            return tfp.distributions.Categorical(logits=logits).sample()
+            sample = self.categorical_sample(logits, num_samples=num_samples)
+            return sample
 
         def _select_sample_or_argmax(x):
-            mask = tfp.distributions.Bernoulli(
-                probs=sample_prob, dtype=tf.bool).sample(sample_shape=tf.shape(x))
+            mask = tf.less(tf.random_uniform(tf.shape(x)), sample_prob)
             return tf.where(mask, x, self._reduce_argmax(logits, num_samples=num_samples))
 
         if sample_prob is not None:
@@ -657,3 +642,16 @@ class BaseSum(OpNode, abc.ABC):
             return _select_sample_or_argmax(_sample())
         else:
             return _sample()
+
+    @utils.lru_cache
+    def categorical_sample(self, logits, num_samples):
+        shape = tf.shape(logits)
+        last_dim = shape[-1]
+        logits = tf.reshape(logits, (-1, last_dim))
+        sample = tf.multinomial(logits, num_samples)
+
+        if self._tile_unweighted_size == num_samples and self._max_sum_size > 1:
+            shape = tf.concat((shape[:-1], [num_samples]), axis=0)
+            return tf.squeeze(tf.reshape(sample, shape), axis=self._reduce_axis - 1)
+
+        return tf.reshape(sample, shape[:-1])

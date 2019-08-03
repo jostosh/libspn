@@ -234,8 +234,7 @@ class SpatialSums(BaseSum, abc.ABC):
         num_samples = 1 if reducible_log_prob.shape[self._channel_axis] != 1 else self._num_channels
         if sample:
             max_indices = self._reduce_sample_log(
-                reducible_log_prob, sample_prob=sample_prob, num_samples=num_samples,
-                unweighted=unweighted)
+                reducible_log_prob, sample_prob=sample_prob, num_samples=num_samples)
         else:
             max_indices = self._reduce_argmax(reducible_log_prob, num_samples=num_samples)
         max_indices = tf.reshape(max_indices, (-1, self._compute_out_size()))

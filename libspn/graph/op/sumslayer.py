@@ -305,7 +305,7 @@ class SumsLayer(BaseSum):
         num_samples = 1 if reducible_tensor.shape[1] != 1 else self._num_sums
         if sample:
             max_indices = self._reduce_sample_log(reducible_tensor, sample_prob=sample_prob,
-                                                  num_samples=num_samples, unweighted=unweighted)
+                                                  num_samples=num_samples)
         else:
             max_indices = self._reduce_argmax(reducible_tensor, num_samples=num_samples)
         max_counts = utils.scatter_values(
