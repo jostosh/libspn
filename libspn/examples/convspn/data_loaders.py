@@ -10,10 +10,15 @@ tfk = tf.keras
 
 def load_fashion_mnist(args):
     (train_x, train_y), (test_x, test_y) = tfk.datasets.fashion_mnist.load_data()
-    train_x = np.reshape(train_x / 255., (-1, 28, 28, 1))
-    test_x = np.reshape(test_x / 255., (-1, 28, 28, 1))
+    train_x = np.reshape(train_x, (-1, 28, 28, 1))
+    test_x = np.reshape(test_x, (-1, 28, 28, 1))
     train_y = train_y.squeeze()
     test_y = test_y.squeeze()
+
+    if not args.normalize_data:
+        train_x /= 255.
+        test_x /= 255.
+
     return test_x, test_y, train_x, train_y
 
 
@@ -28,14 +33,18 @@ def load_cifar10(args):
 
 def load_mnist(args):
     (train_x, train_y), (test_x, test_y) = tfk.datasets.mnist.load_data()
-    train_x = np.reshape(train_x / 255., (-1, 28, 28, 1))
-    test_x = np.reshape(test_x / 255., (-1, 28, 28, 1))
+    train_x = np.reshape(train_x, (-1, 28, 28, 1))
+    test_x = np.reshape(test_x, (-1, 28, 28, 1))
     train_y = train_y.squeeze()
     test_y = test_y.squeeze()
 
     if args.discrete:
         train_x = np.greater(train_x, 20 / 256).astype(np.int32)
         test_x = np.greater(test_x, 20 / 256).astype(np.int32)
+
+    if not args.normalize_data:
+        train_x /= 255.
+        test_x /= 255.
 
     return test_x, test_y, train_x, train_y
 
@@ -62,23 +71,44 @@ def load_olivetti(args):
 
 def load_caltech(args):
     base = opth.expanduser("~/datasets/caltech")
-    class_dirs = [d for d in os.listdir(base) if opth.isdir(opth.join(base, d))]
-    train_x, train_y, test_x, test_y = [], [], [], []
-    for label, cd in enumerate(class_dirs):
-        dirpath = opth.join(base, cd)
-        fnms = os.listdir(dirpath)
-        x = [np.loadtxt(opth.join(dirpath, fnm)) for fnm in fnms]
-        y = [label] * len(fnms)
-        test_size = min(50, len(fnms) // 3)
-        train_x.extend(x[:-test_size])
-        train_y.extend(y[:-test_size])
-        test_x.extend(x[-test_size:])
-        test_y.extend(y[-test_size:])
 
-    train_x = np.expand_dims(np.asarray(train_x), -1)
-    test_x = np.expand_dims(np.asarray(test_x), -1)
-    train_y = np.asarray(train_y)
-    test_y = np.asarray(test_y)
+    rescale_size = 100
+    crop_size = 64
+    offset = (rescale_size - crop_size) // 2
+
+    if opth.exists(opth.join(base, 'train_x.npy')) and opth.exists(opth.join(base, 'train_y.npy')) and \
+            opth.exists(opth.join(base, 'test_x.npy')) and opth.exists(opth.join(base, 'test_y.npy')):
+        train_x = np.load(opth.join(base, 'train_x.npy'))
+        test_x = np.load(opth.join(base, 'test_x.npy'))
+        train_y = np.load(opth.join(base, 'train_y.npy'))
+        test_y = np.load(opth.join(base, 'test_y.npy'))
+    else:
+        class_dirs = [d for d in os.listdir(base) if opth.isdir(opth.join(base, d))]
+        train_x, train_y, test_x, test_y = [], [], [], []
+        for label, cd in enumerate(class_dirs):
+            dirpath = opth.join(base, cd)
+            fnms = os.listdir(dirpath)
+            x = [np.loadtxt(opth.join(dirpath, fnm)) for fnm in fnms]
+            y = [label] * len(fnms)
+            test_size = min(50, len(fnms) // 3)
+            train_x.extend(x[:-test_size])
+            train_y.extend(y[:-test_size])
+            test_x.extend(x[-test_size:])
+            test_y.extend(y[-test_size:])
+
+        train_x = np.expand_dims(np.asarray(train_x), -1)
+        test_x = np.expand_dims(np.asarray(test_x), -1)
+        train_y = np.asarray(train_y)
+        test_y = np.asarray(test_y)
+
+        # Take the inner 64 x 64 pixels (see spn-user-guide.pdf in Poon and Domingos code)
+        train_x = train_x[:, offset:offset + crop_size, offset:offset + crop_size, :]
+        test_x = test_x[:, offset:offset + crop_size, offset:offset + crop_size, :]
+
+        np.save(opth.join(base, 'train_x.npy'), train_x)
+        np.save(opth.join(base, 'train_y.npy'), train_y)
+        np.save(opth.join(base, 'test_x.npy'), test_x)
+        np.save(opth.join(base, 'test_y.npy'), test_y)
 
     if not args.normalize_data:
         train_x /= 255.

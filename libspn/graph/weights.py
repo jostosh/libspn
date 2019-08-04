@@ -139,7 +139,7 @@ class Weights(ParamNode):
         normalized_value = value - tf.reduce_logsumexp(value, axis=-1, keepdims=True)
         return tf.assign(self._variable, normalized_value)
 
-    def normalize(self, value=None, name="Normalize", linear_w_minimum=1e-2, log_w_minimum=-1e10):
+    def normalize(self, value=None, name="Normalize", linear_w_minimum=1e-4, log_w_minimum=-1e10):
         """Renormalizes the weights. If no value is given, the method will use the current
         weight values.
 

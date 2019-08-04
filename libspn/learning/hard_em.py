@@ -91,7 +91,7 @@ class HardEMLearning:
                         self._mpe_path.counts[pn.node])
                     if self._l0_prior_factor is not None:
                         counts_summed_batch = tf.subtract(
-                            counts_summed_batch, self._l0_prior_factor, "L0Prior")
+                            counts_summed_batch, self._l0_prior_factor / pn.node.num_weights, "L0Prior")
                     updated_counts = tf.maximum(
                         pn.accum + counts_summed_batch, self._minimal_value_multiplier / tf.constant(pn.node.num_weights, dtype=tf.float32))
                     assign_ops.append(tf.assign(pn.accum, updated_counts))

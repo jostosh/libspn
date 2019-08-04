@@ -131,7 +131,7 @@ class GDLearning:
                 def fun(node):
                     if node.is_param:
                         weight_norm_ops.append(
-                            node.normalize(linear_w_minimum=self._linear_w_minimum))
+                            node.normalize(linear_w_minimum=self._linear_w_minimum / node.node.num_weights))
 
                     if isinstance(node, LocationScaleLeaf) and node._trainable_scale:
                         weight_norm_ops.append(tf.assign(node.scale_variable, tf.maximum(

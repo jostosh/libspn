@@ -48,7 +48,7 @@ def train(args):
         shear_range=args.shear_range, rotation_range=args.rotation_range,
         zoom_range=args.zoom_range, horizontal_flip=args.horizontal_flip,
         image_dims=(num_rows, num_cols))
-    args.l0_prior_factor = args.l0_prior_factor / train_augmented_iterator.num_batches()
+    # args.l0_prior_factor = args.l0_prior_factor / train_augmented_iterator.num_batches()
 
     train_iterator = DataIterator(
         [train_x, train_y], batch_size=args.batch_size, shuffle=True)
@@ -235,7 +235,7 @@ def train(args):
                 print("Stopping criterion reached!")
                 break
 
-            if args.reset_per_epoch:
+            if args.reset_per_epoch is not None and (epoch + 1) % args.reset_per_epoch == 0:
                 sess.run(reset_op)
 
         # Store locations and scales
@@ -306,10 +306,6 @@ def build_spn(args, num_dims, num_vars, train_x, train_y):
         prod_num_channels.insert(1, prod_num_channels[1])
         sum_num_channels.insert(1, sum_num_channels[1])
 
-    if args.dataset == 'caltech':
-        prod_num_channels.insert(1, prod_num_channels[1])
-        sum_num_channels.insert(1, sum_num_channels[1])
-
     prod_num_channels = tuple(prod_num_channels)
     sum_num_channels = tuple(sum_num_channels)
     num_classes = args.class_subset if args.class_subset else 10
@@ -318,7 +314,7 @@ def build_spn(args, num_dims, num_vars, train_x, train_y):
         'fashion_mnist': 28,
         'cifar10': 32,
         'olivetti': 64,
-        'caltech': 100
+        'caltech': 64
     }[args.dataset]
     if args.dataset == 'cifar10' or args.first_local_sum:
         in_var_ = spn.LocalSums(in_var, num_channels=args.sum_num_c0,
@@ -375,14 +371,14 @@ def setup_learning(args, in_var, root):
     # Get the log likelihood
     with tf.name_scope("LogLikelihoods"):
         logger.info("Setting up log-likelihood")
-        val_gen = spn.LogValue(inference_type=inference_type)
+        val_gen = spn.LogValue()
         labels_llh = val_gen.get_value(root)
         no_labels_llh = val_gen.get_value(root_marginalized) if args.supervised else labels_llh
 
     if args.learning_algo == "em":
         em_learning = spn.HardEMLearning(
             root, value_inference_type=inference_type,
-            minimal_value_multiplier=args.minimal_value_mutliplier, sample_winner=args.sample_path,
+            minimal_value_multiplier=args.minimal_value_multiplier, sample_winner=args.sample_path,
             sample_prob=args.sample_prob, unweighted=args.use_unweighted,
             l0_prior_factor=args.l0_prior_factor, additive_smoothing=args.additive_smoothing)
 
@@ -395,6 +391,15 @@ def setup_learning(args, in_var, root):
             update_commit = no_op
         return correct, labels_node, labels_llh, no_labels_llh, update_accumulate, class_mpe, no_op, \
            no_op, in_var_mpe, update_commit, em_learning.reset_accumulators()
+
+    if args.learning_algo == "soft_em":
+        em_learning = spn.SoftEMLearning(
+            root, minimum_accumulator_multiplier=args.minimal_value_multiplier)
+
+        update_accumulate = em_learning.update_spn()
+        update_commit = no_op
+        return correct, labels_node, labels_llh, no_labels_llh, update_accumulate, class_mpe, no_op, \
+               no_op, in_var_mpe, update_commit, no_op
 
     logger.info("Setting up GD learning")
     global_step = tf.Variable(0, trainable=False)
@@ -499,7 +504,7 @@ if __name__ == "__main__":
     params.add_argument("--name", default="convspn")
     params.add_argument("--batch_size", default=32, type=int)
     params.add_argument(
-        "--learning_algo", default='amsgrad', choices=['amsgrad', 'adam', 'rmsprop', 'em'])
+        "--learning_algo", default='amsgrad', choices=['amsgrad', 'adam', 'rmsprop', 'em', 'soft_em'])
 
     params.add_argument("--total_counts_init", default=1.0, type=float)
     params.add_argument("--num_components", default=4, type=int)
@@ -540,7 +545,7 @@ if __name__ == "__main__":
 
     params.add_argument("--first_local_sum", action="store_true", dest="first_local_sum")
 
-    params.add_argument("--minimal_value_mutliplier", type=float, default=1e-4)
+    params.add_argument("--minimal_value_multiplier", type=float, default=1e-4)
     params.add_argument("--sample_path", action="store_true", dest="sample_path")
     params.add_argument("--sample_prob", type=float, default=None)
     params.add_argument("--use_unweighted", action="store_true", dest="use_unweighted")
@@ -572,7 +577,7 @@ if __name__ == "__main__":
     params.add_argument("--update_period_unit", default=None, choices=['epoch', 'step'])
     params.add_argument("--update_period_value", default=1, type=int)
 
-    params.add_argument("--reset_per_epoch", action="store_true", dest='reset_per_epoch')
+    params.add_argument("--reset_per_epoch", type=int, default=None)
 
     params.add_argument("--completion_by_marginal", action="store_true",
                         dest="completion_by_marginal")
@@ -590,7 +595,7 @@ if __name__ == "__main__":
                         supervised=True, estimate_scale=False, only_root_marginalize=False,
                         normalize_data=False, tensor_spn=False, fixed_variance=False,
                         log_weights=False, equidistant_means=False, first_depthwise=False,
-                        sample_path=False, use_unweighted=False, reset_per_epoch=False)
+                        sample_path=False, use_unweighted=False)
     args = params.parse_args()
     pprint.pprint(vars(args))
     train(args)

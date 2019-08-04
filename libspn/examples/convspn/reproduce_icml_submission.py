@@ -9,7 +9,7 @@ def configs():
     generative = dict(
         unsupervised=True,
         learning_algo="em",
-        batch_size=16,
+        batch_size=4,
         completion=True,
         completion_by_marginal=True,
         dist='normal',
@@ -41,22 +41,89 @@ def configs():
         weight_init_max=1.0,
         minimal_value_mutliplier=1e-4,
         stop_epsilon=1e-1,
-        # update_period_unit="step",
-        # update_period_value=8,
-        total_counts_init=100,
+        update_period_unit="step",
+        update_period_value=8
     )
 
-    generative_half_size = dict(
-        sum_num_c0=16, sum_num_c1=16, sum_num_c2=16, sum_num_c3=16, sum_num_c4=16)
+    generative_olivetti_caltech = dict(
+        unsupervised=True,
+        learning_algo='em',
+        batch_size=16,
+        num_epochs=25,
+        completion=True,
+        completion_by_marginal=True,
+        dist='normal',
+        log_weights=False,
+        sum_num_c0=16, sum_num_c1=16, sum_num_c2=16, sum_num_c3=16, sum_num_c4=16,
+        normalize_data=True,
+        equidistant_means=False,
+        estimate_scale=False,
+        fixed_mean=True,
+        fixed_variance=True,
+        weight_init_min=1.0,
+        weight_init_max=1.0,
+        minimal_value_mutliplier=1e-4,
+        stop_epsilon=1e-1,
+        update_period_unit="step",
+        update_period_value=4
+    )
 
-    generative_train_leafs = dict(
+    generative_mnist = dict(
+        unsupervised=True,
+        learning_algo='em',
+        batch_size=16,
+        num_epochs=25,
+        completion=True,
+        completion_by_marginal=True,
+        dist='normal',
+        log_weights=False,
+        sum_num_c0=32, sum_num_c1=32, sum_num_c2=64, sum_num_c3=64, sum_num_c4=64,
+        normalize_data=True,
+        equidistant_means=False,
+        estimate_scale=False,
+        fixed_mean=True,
+        fixed_variance=True,
+        weight_init_min=1.0,
+        weight_init_max=1.0,
+        minimal_value_mutliplier=1e-4,
+        stop_epsilon=1e-2,
+        update_period_unit="step",
+        update_period_value=4
+    )
+
+    discriminative_mnist = dict(
+        unsupervised=False,
+        learning_algo='adam',
+        batch_size=16,
+        num_epochs=25,
+        completion=True,
+        completion_by_marginal=True,
+        dist='normal',
+        log_weights=False,
+        sum_num_c0=32, sum_num_c1=32, sum_num_c2=64, sum_num_c3=64, sum_num_c4=64,
+        normalize_data=True,
+        equidistant_means=True,
+        estimate_scale=False,
         fixed_mean=False,
-        fixed_variance=False
+        fixed_variance=True,
+        weight_init_min=0.1,
+        weight_init_max=1.0,
+        learning_rate=1e-4,
+        minimal_value_mutliplier=1e-4,
+        stop_epsilon=1e-2,
     )
 
     generative_additive_smoothing = dict(
         additive_smoothing=1e-2,
         minimal_value_mutliplier=0.0
+    )
+
+    generative_mpe = dict(
+        value_inf_type='mpe'
+    )
+
+    generative_reset_per5 = dict(
+        reset_per_epoch=5
     )
 
     generative_additive_smoothing1 = dict(
@@ -65,7 +132,11 @@ def configs():
     )
 
     generative_l0_prior = dict(
-        l0_prior_factor=1.0
+        l0_prior_factor=0.1
+    )
+
+    generative_l0_prior01 = dict(
+        l0_prior_factor=0.01
     )
 
     generative_use_unweighted = dict(
@@ -73,7 +144,7 @@ def configs():
     )
 
     generative_sampling = dict(
-        sample_prob=0.1,
+        sample_prob=0.5,
         sample_path=True
     )
 
@@ -117,123 +188,42 @@ def configs():
         shear_range=0.1
     )
     
-    mnist_common = dict(dataset='mnist', num_components=2)
+    mnist_common = dict(dataset='mnist', num_components=4)
     fashion_mnist_common = dict(dataset='fashion_mnist', num_components=4)
     olivetti_common = dict(dataset='olivetti', num_components=4)
-    caltech_common = dict(dataset='caltech', num_components=8)
+    caltech_common = dict(dataset='caltech', num_components=4)
     cifar10_common = dict(dataset='cifar10', num_components=32, first_depthwise=True)
     return dict(
         mnist=[
-            (combine_dicts(generative, mnist_common, dict(name="MNIST_Generative")), generative_grid),
-            (combine_dicts(discriminative, mnist_common, dict(name="MNIST_Discriminative")), discriminative_grid),
-            (combine_dicts(discriminative, mnist_common, augmentation, dict(name="MNIST_Discriminative_Augmented")), discriminative_grid)
+            (combine_dicts(generative_mnist, mnist_common, dict(name="MNISTCompletionBase")), None),
+            (combine_dicts(generative_mnist, mnist_common, generative_use_unweighted, dict(name="MNISTCompletionUnweighted")), None),
+            # (combine_dicts(discriminative, mnist_common, dict(name="MNIST_Discriminative")), discriminative_grid),
+            # (combine_dicts(discriminative, mnist_common, augmentation, dict(name="MNIST_Discriminative_Augmented")), discriminative_grid)
         ],
         fashion_mnist=[
-            (combine_dicts(generative, fashion_mnist_common, dict(name="FashionMNIST_Generative")),
-             generative_grid),
-            (combine_dicts(discriminative, fashion_mnist_common, dict(name="FashionMNIST Discriminative")),
-             discriminative_grid),
-            (combine_dicts(discriminative, fashion_mnist_common, augmentation,
-                           dict(name="FashionMNIST_Discriminative_Augmented")), discriminative_grid)
+            (combine_dicts(generative_mnist, fashion_mnist_common, dict(name="FMNISTCompletionBase")), None),
+            (combine_dicts(generative_mnist, fashion_mnist_common, generative_use_unweighted,
+                           dict(name="FMNISTCompletionUnweighted")), None),
         ],
         olivetti=[
             # (combine_dicts(generative_olivetti_poon, olivetti_common, dict(name="Base")), None),
             # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_additive_smoothing, dict(name="AdditiveSmoothing")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_additive_smoothing1, dict(name="AdditiveSmoothing1")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_l0_prior,
-            #                dict(name="L0Prior")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
             #                generative_use_unweighted, dict(name="Unweighted")), None),
             # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_sampling, dict(name="Sampling")), None),
+            #                generative_l0_prior, dict(name="L0Prior")), None),
             # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_train_leafs, dict(name="TrainMeans")), None),
+            #                generative_l0_prior01, dict(name="L0Prior01")), None),
             # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_train_leafs, dict(name="TrainMeansAndScales")), None),
-            (combine_dicts(generative_olivetti_poon, olivetti_common,
-                           generative_train_leafs, singleton_batch,
-                           dict(name="TrainMeansAndScalesSingleton")), None),
-            (combine_dicts(generative_olivetti_poon, olivetti_common,
-                           generative_train_leafs, singleton_batch, generative_use_unweighted,
-                           dict(name="TrainMeansAndScalesSingletonUnweighted")), None),
-            (combine_dicts(generative_olivetti_poon, olivetti_common,
-                           generative_train_leafs, singleton_batch, generative_sampling_05,
-                           dict(name="TrainMeansAndScalesSingletonSampling")), None),
-            (combine_dicts(generative_olivetti_poon, olivetti_common,
-                           generative_train_leafs, singleton_batch, generative_sampling_05,
-                           generative_use_unweighted,
-                           dict(name="TrainMeansAndScalesSingletonSamplingUnweighted")), None),
+            #                generative_mpe, dict(name="MPE")), None),
             # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_half_size, dict(name="HalfSize")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_use_unweighted,
-            #                generative_additive_smoothing, dict(name="AdditiveSmoothingUnweighted")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_l0_prior,
-            #                generative_use_unweighted, dict(name="UnweightedL0")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_l0_prior,
-            #                generative_additive_smoothing, dict(name="AdditiveSmoothingL0")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_l0_prior,
-            #                generative_use_unweighted,
-            #                generative_additive_smoothing, dict(name="AdditiveSmoothingL0Unweighted")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common, offline_em,
-            #                generative_use_unweighted, dict(name="Unweighted")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_sampling,
-            #                generative_train_leafs, dict(name="TrainLeaves")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_additive_smoothing, generative_l0_prior,
-            #                generative_use_unweighted, generative_sampling,
-            #                dict(name="AllNoTrainLeaves")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_additive_smoothing, generative_l0_prior,
-            #                generative_use_unweighted,
-            #                generative_train_leafs, dict(name="AllNoSampling")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_additive_smoothing, generative_l0_prior,
-            #                generative_sampling,
-            #                generative_train_leafs, dict(name="AllNoUnweighted")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_additive_smoothing,
-            #                generative_sampling, generative_use_unweighted,
-            #                generative_train_leafs, dict(name="AllNoL0Prior")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_additive_smoothing, generative_l0_prior,
-            #                generative_use_unweighted, generative_sampling,
-            #                generative_train_leafs, dict(name="All")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_initial_accum, generative_l0_prior,
-            #                generative_use_unweighted, generative_sampling,
-            #                dict(name="AllNoTrainLeavesIA")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_initial_accum, generative_l0_prior,
-            #                generative_use_unweighted,
-            #                generative_train_leafs, dict(name="AllNoSamplingIA")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_initial_accum, generative_l0_prior,
-            #                generative_sampling,
-            #                generative_train_leafs, dict(name="AllNoUnweightedIA")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_initial_accum,
-            #                generative_sampling, generative_use_unweighted,
-            #                generative_train_leafs, dict(name="AllNoL0PriorIA")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_initial_accum, generative_l0_prior,
-            #                generative_use_unweighted, generative_sampling,
-            #                generative_train_leafs, dict(name="AllIA")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_initial_accum, generative_l0_prior,
-            #                dict(name="L0PriorIA")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_initial_accum,
-            #                generative_sampling, generative_train_leafs,
-            #                dict(name="SamplingIA")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_initial_accum,
-            #                generative_use_unweighted, dict(name="UnweightedIA")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common, generative_initial_accum,
-            #                generative_train_leafs, dict(name="TrainLeavesIA")), None),
+            #                generative_reset_per5, dict(name="ResetPer5")), None),
         ],
         caltech=[
-            (combine_dicts(generative, caltech_common, dict(name="Caltech")), generative_grid)
+            (combine_dicts(generative_olivetti_caltech, caltech_common, dict(name="CaltechBase")), None),
+            (combine_dicts(generative_olivetti_caltech, caltech_common, generative_use_unweighted,
+                           dict(name="CaltechUnweighted")), None),
+            (combine_dicts(generative_olivetti_caltech, caltech_common, generative_reset_per5,
+                           dict(name="CaltechResetPer5")), None),
         ],
         cifar10=[
             (combine_dicts(discriminative, cifar10_common, dict(name="Cifar10_Discriminative")), discriminative_grid),
