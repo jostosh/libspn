@@ -184,13 +184,10 @@ class SpatialSums(BaseSum, abc.ABC):
                 w_tensor, latent_indicators_tensor, *input_tensors)
 
             if dropout_rate is not None:
-                dropout_mask = tf.less(tf.random.uniform(tf.shape(inp_concat)), dropout_rate)
-                dropout_mask = tf.where(
-                    tf.equal(dropout_mask, tf.reduce_max(dropout_mask, axis=-1, keep_dims=True)),
-                    tf.zeros_like(dropout_mask), dropout_mask
-                )
-                inp_concat = tf.where(
-                    dropout_mask, tf.log(0.0) * tf.ones_like(inp_concat), inp_concat)
+                random_tensor = tf.random.uniform(tf.shape(inp_concat))
+                eq_max = tf.equal(inp_concat, tf.reduce_max(inp_concat, keepdims=True, axis=-1))
+                keep_mask = tf.logical_or(eq_max, tf.greater(random_tensor, dropout_rate))
+                inp_concat = tf.where(keep_mask, inp_concat, tf.log(0.0) * tf.ones_like(inp_concat))
 
             # Determine whether to use matmul or conv op and return
             if all(w_tensor.shape[i] == 1 for i in self._op_axis):

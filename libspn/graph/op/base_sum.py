@@ -315,13 +315,10 @@ class BaseSum(OpNode, abc.ABC):
             w_tensor, latent_indicators_tensor, *input_tensors, zero_prob_val=-float('inf'))
 
         if dropout_rate is not None:
-            dropout_mask = tf.less(tf.random.uniform(tf.shape(reducible)), dropout_rate)
-            dropout_mask = tf.where(
-                tf.equal(dropout_mask, tf.reduce_max(dropout_mask, axis=-1, keep_dims=True)),
-                tf.zeros_like(dropout_mask), dropout_mask
-            )
-            reducible = tf.where(
-                dropout_mask, tf.log(0.0) * tf.ones_like(reducible), reducible)
+            random_tensor = tf.random.uniform(tf.shape(reducible))
+            eq_max = tf.equal(reducible, tf.reduce_max(reducible, keepdims=True, axis=-1))
+            keep_mask = tf.logical_or(eq_max, tf.greater(random_tensor, dropout_rate))
+            reducible = tf.where(keep_mask, reducible, tf.log(0.0) * tf.ones_like(reducible))
 
         # Apply latent IndicatorLeaf
         if self._latent_indicators:
