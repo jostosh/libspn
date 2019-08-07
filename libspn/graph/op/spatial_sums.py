@@ -185,7 +185,7 @@ class SpatialSums(BaseSum, abc.ABC):
 
             if dropout_rate is not None:
                 random_tensor = tf.random.uniform(tf.shape(inp_concat))
-                eq_max = tf.equal(inp_concat, tf.reduce_max(inp_concat, keepdims=True, axis=-1))
+                eq_max = tf.equal(random_tensor, tf.reduce_max(random_tensor, keepdims=True, axis=-1))
                 keep_mask = tf.logical_or(eq_max, tf.greater(random_tensor, dropout_rate))
                 inp_concat = tf.where(keep_mask, inp_concat, tf.log(0.0) * tf.ones_like(inp_concat))
 
