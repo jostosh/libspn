@@ -423,11 +423,10 @@ def setup_learning(args, in_var, root):
     logger.info("Settting up test loss")
     with tf.name_scope("DeterministicLoss"):
         main_loss = learning.loss()
-        regularization_loss = learning.regularization_loss()
         loss_per_sample = learning.loss(reduce_fn=lambda x: tf.reshape(x, (-1,)))
 
     return correct, labels_node, main_loss, no_labels_llh, minimize_op, class_mpe, \
-           regularization_loss, loss_per_sample, in_var_mpe
+           no_op, loss_per_sample, in_var_mpe, no_op, no_op
 
 
 def load_data(args):

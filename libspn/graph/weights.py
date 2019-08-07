@@ -139,7 +139,7 @@ class Weights(ParamNode):
         normalized_value = value - tf.reduce_logsumexp(value, axis=-1, keepdims=True)
         return tf.assign(self._variable, normalized_value)
 
-    def normalize(self, value=None, name="Normalize", linear_w_minimum=1e-4, log_w_minimum=-1e10):
+    def normalize(self, value=None, name="Normalize", linear_w_min_divisor=1e-4, log_w_minimum=-1e10):
         """Renormalizes the weights. If no value is given, the method will use the current
         weight values.
 
@@ -158,7 +158,7 @@ class Weights(ParamNode):
                     value += tf.log(tf.cast(tf.reshape(self._mask, value.shape), dtype=conf.dtype))
                 return tf.assign(self._variable, tf.nn.log_softmax(value, axis=-1))
             else:
-                value = tf.maximum(value, linear_w_minimum)
+                value = tf.maximum(value, linear_w_min_divisor / self.num_weights)
                 if self._mask and not all(self._mask):
                     # Only perform masking if mask is given and mask contains any 'False'
                     value *= tf.cast(tf.reshape(self._mask, value.shape), dtype=conf.dtype)
@@ -331,19 +331,19 @@ class BlockWeights(ParamNode):
     def log(self):
         return self._in_logspace
 
-    def _normalized(self, x=None, logspace=None, linear_w_minimum=1e-2, log_w_minimum=-1e10):
+    def _normalized(self, x=None, logspace=None, linear_w_min_divisor=1e-4, log_w_minimum=-1e10):
         x = x if x is not None else self._variable
         logspace = logspace or self._in_logspace
         if logspace:
             x = tf.maximum(x, log_w_minimum)
             return x - tf.reduce_logsumexp(x, axis=self._normalize_axis, keepdims=True)
-        x = tf.maximum(x, linear_w_minimum)
+        x = tf.maximum(x, linear_w_min_divisor / self.num_inputs)
         return x / tf.reduce_sum(x, axis=self._normalize_axis, keepdims=True)
 
-    def normalize(self, value=None, name="Normalize", linear_w_minimum=1e-2, log_w_minimum=-1e10):
+    def normalize(self, value=None, name="Normalize", linear_w_min_divisor=1e-4, log_w_minimum=-1e10):
         with tf.name_scope(name):
             normalized = self._normalized(
-                x=value, linear_w_minimum=linear_w_minimum, log_w_minimum=log_w_minimum)
+                x=value, linear_w_min_divisor=linear_w_min_divisor, log_w_minimum=log_w_minimum)
             return tf.assign(self._variable, normalized)
 
     def assign_log(self, value):

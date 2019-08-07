@@ -35,7 +35,7 @@ class GDLearning:
                  learning_task_type=LearningTaskType.SUPERVISED,
                  learning_method=LearningMethodType.DISCRIMINATIVE,
                  learning_rate=1e-4, marginalizing_root=None, name="GDLearning",
-                 global_step=None, linear_w_minimum=1e-2):
+                 global_step=None, linear_w_minimum=1e-4):
 
         if learning_task_type == LearningTaskType.UNSUPERVISED and \
                 learning_method == LearningMethodType.DISCRIMINATIVE:
@@ -131,7 +131,8 @@ class GDLearning:
                 def fun(node):
                     if node.is_param:
                         weight_norm_ops.append(
-                            node.normalize(linear_w_minimum=self._linear_w_minimum / node.node.num_weights))
+                            node.normalize(
+                                linear_w_min_divisor=self._linear_w_minimum))
 
                     if isinstance(node, LocationScaleLeaf) and node._trainable_scale:
                         weight_norm_ops.append(tf.assign(node.scale_variable, tf.maximum(

@@ -39,7 +39,7 @@ def configs():
         fixed_variance=True,
         weight_init_min=1.0,
         weight_init_max=1.0,
-        minimal_value_mutliplier=1e-4,
+        minimal_value_multiplier=1e-4,
         stop_epsilon=1e-1,
         update_period_unit="step",
         update_period_value=8
@@ -62,7 +62,7 @@ def configs():
         fixed_variance=True,
         weight_init_min=1.0,
         weight_init_max=1.0,
-        minimal_value_mutliplier=1e-4,
+        minimal_value_multiplier=1e-4,
         stop_epsilon=1e-1,
         update_period_unit="step",
         update_period_value=4
@@ -85,7 +85,7 @@ def configs():
         fixed_variance=True,
         weight_init_min=1.0,
         weight_init_max=1.0,
-        minimal_value_mutliplier=1e-4,
+        minimal_value_multiplier=1e-4,
         stop_epsilon=1e-2,
         update_period_unit="step",
         update_period_value=4
@@ -97,7 +97,7 @@ def configs():
         batch_size=16,
         num_epochs=25,
         completion=True,
-        completion_by_marginal=True,
+        completion_by_marginal=False,
         dist='normal',
         log_weights=False,
         sum_num_c0=32, sum_num_c1=32, sum_num_c2=64, sum_num_c3=64, sum_num_c4=64,
@@ -109,13 +109,13 @@ def configs():
         weight_init_min=0.1,
         weight_init_max=1.0,
         learning_rate=1e-4,
-        minimal_value_mutliplier=1e-4,
+        minimal_value_multiplier=1e-4,
         stop_epsilon=1e-2,
     )
 
     generative_additive_smoothing = dict(
         additive_smoothing=1e-2,
-        minimal_value_mutliplier=0.0
+        minimal_value_multiplier=0.0
     )
 
     generative_mpe = dict(
@@ -128,7 +128,7 @@ def configs():
 
     generative_additive_smoothing1 = dict(
         additive_smoothing=1.0,
-        minimal_value_mutliplier=0.0
+        minimal_value_multiplier=0.0
     )
 
     generative_l0_prior = dict(
@@ -195,9 +195,9 @@ def configs():
     cifar10_common = dict(dataset='cifar10', num_components=32, first_depthwise=True)
     return dict(
         mnist=[
-            (combine_dicts(generative_mnist, mnist_common, dict(name="MNISTCompletionBase")), None),
-            (combine_dicts(generative_mnist, mnist_common, generative_use_unweighted, dict(name="MNISTCompletionUnweighted")), None),
-            # (combine_dicts(discriminative, mnist_common, dict(name="MNIST_Discriminative")), discriminative_grid),
+            # (combine_dicts(generative_mnist, mnist_common, dict(name="MNISTCompletionBase")), None),
+            # (combine_dicts(generative_mnist, mnist_common, generative_use_unweighted, dict(name="MNISTCompletionUnweighted")), None),
+            (combine_dicts(discriminative_mnist, mnist_common, dict(name="MNISTClassAdam")), None),
             # (combine_dicts(discriminative, mnist_common, augmentation, dict(name="MNIST_Discriminative_Augmented")), discriminative_grid)
         ],
         fashion_mnist=[
