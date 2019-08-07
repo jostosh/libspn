@@ -287,7 +287,8 @@ class BaseSum(OpNode, abc.ABC):
         return latent_indicators
 
     @utils.lru_cache
-    def _compute_reducible(self, w_tensor, latent_indicators_tensor, *input_tensors, weighted=True):
+    def _compute_reducible(self, w_tensor, latent_indicators_tensor, *input_tensors,
+                           weighted=True, dropout_rate=None):
         """Computes a reducible ``Tensor`` so that reducing it over the last axis can be used for
         marginal inference, MPE inference and MPE path computation.
 
@@ -313,6 +314,11 @@ class BaseSum(OpNode, abc.ABC):
         w_tensor, latent_indicators_tensor, reducible = self._prepare_component_wise_processing(
             w_tensor, latent_indicators_tensor, *input_tensors, zero_prob_val=-float('inf'))
 
+        if dropout_rate is not None:
+            dropout_mask = tf.less(tf.random.uniform(tf.shape(reducible)), dropout_rate)
+            reducible = tf.where(
+                dropout_mask, tf.log(0.0) * tf.ones_like(reducible), reducible)
+
         # Apply latent IndicatorLeaf
         if self._latent_indicators:
             reducible = utils.cwise_add(reducible, latent_indicators_tensor)
@@ -330,9 +336,11 @@ class BaseSum(OpNode, abc.ABC):
 
     @utils.docinherit(OpNode)
     @utils.lru_cache
-    def _compute_log_value(self, w_tensor, latent_indicators_tensor, *value_tensors):
+    def _compute_log_value(self, w_tensor, latent_indicators_tensor, *value_tensors,
+                           dropout_rate=None):
         return self._reduce_marginal_inference_log(self._compute_reducible(
-            w_tensor, latent_indicators_tensor, *value_tensors, weighted=True))
+            w_tensor, latent_indicators_tensor, *value_tensors, weighted=True,
+            dropout_rate=dropout_rate))
 
     def _get_differentiable_inputs(self, w_tensor, latent_indicators_tensor, *value_tensors):
         """Selects the tensors to include for a tf.custom_gradient when computing the log-value.

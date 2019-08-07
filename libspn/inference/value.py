@@ -1,6 +1,7 @@
 import tensorflow as tf
 from types import MappingProxyType
 from libspn.graph.algorithms import compute_graph_up
+from libspn.graph.op.base_sum import BaseSum
 from libspn.graph.op.spatial_sums import SpatialSums
 from libspn.inference.type import InferenceType
 
@@ -18,11 +19,13 @@ class LogValue:
             MPE inference will be used for all nodes.
     """
 
-    def __init__(self, inference_type=None,  name="LogValue", matmul_or_conv=True):
+    def __init__(self, inference_type=None,  name="LogValue", matmul_or_conv=True,
+                 dropout_rate=None):
         self._inference_type = inference_type
         self._values = {}
         self._name = name
         self._matmul_or_conv = matmul_or_conv
+        self._dropout_rate = dropout_rate
 
     @property
     def values(self):
@@ -56,6 +59,8 @@ class LogValue:
                         node.inference_type == InferenceType.MARGINAL)):
                     if isinstance(node, SpatialSums):
                         kwargs['matmul_or_conv'] = self._matmul_or_conv
+                    if isinstance(node, BaseSum):
+                        kwargs['dropout_rate'] = self._dropout_rate
                     return node._compute_log_value(*args, **kwargs)
                 else:
                     return node._compute_log_mpe_value(*args, **kwargs)

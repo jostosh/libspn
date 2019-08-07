@@ -94,9 +94,9 @@ def configs():
     discriminative_mnist = dict(
         unsupervised=False,
         learning_algo='adam',
-        batch_size=16,
+        batch_size=32,
         num_epochs=25,
-        completion=True,
+        completion=False,
         completion_by_marginal=False,
         dist='normal',
         log_weights=False,
@@ -110,7 +110,8 @@ def configs():
         weight_init_max=1.0,
         learning_rate=1e-4,
         minimal_value_multiplier=1e-4,
-        stop_epsilon=1e-2,
+        stop_epsilon=1e-5,
+        dropout_rate=0.25
     )
 
     generative_additive_smoothing = dict(

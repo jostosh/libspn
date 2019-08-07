@@ -276,7 +276,7 @@ def build_spn(args, num_dims, num_vars, train_x, train_y):
                 num_components=args.num_components, trainable_scale=not args.fixed_variance,
                 scale_init=args.variance_init, trainable_loc=not args.fixed_mean,
                 share_scales=args.share_scales, share_locs_across_vars=args.share_locs,
-                loc_init=Equidistant(-2.0, 2.0) if args.normalize_data else Equidistant(),
+                loc_init=Equidistant(-1.5, 1.5) if args.normalize_data else Equidistant(),
                 samplewise_normalization=args.normalize_data,
                 total_counts_init=args.total_counts_init,
                 **kwargs)
@@ -411,7 +411,8 @@ def setup_learning(args, in_var, root):
         root, learning_task_type=spn.LearningTaskType.SUPERVISED if args.supervised else \
             spn.LearningTaskType.UNSUPERVISED,
         learning_method=learning_method, learning_rate=learning_rate,
-        marginalizing_root=root_marginalized, global_step=global_step)
+        marginalizing_root=root_marginalized, global_step=global_step,
+        dropout_rate=args.dropout_rate)
 
     optimizer = {
         'adam': lambda: tf.train.AdamOptimizer(learning_rate=args.learning_rate),
@@ -585,6 +586,7 @@ if __name__ == "__main__":
     params.add_argument("--lr_decay_steps", type=int, default=100000)
 
     params.add_argument("--l0_prior_factor", type=float, default=0.0)
+    params.add_argument("--dropout_rate", type=float, default=None)
 
     params.set_defaults(discrete=False, predict_each_epoch=False,
                         uniform_priors=False, reparam_weights=False, sparse_range=True,

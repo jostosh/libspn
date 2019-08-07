@@ -35,7 +35,7 @@ class GDLearning:
                  learning_task_type=LearningTaskType.SUPERVISED,
                  learning_method=LearningMethodType.DISCRIMINATIVE,
                  learning_rate=1e-4, marginalizing_root=None, name="GDLearning",
-                 global_step=None, linear_w_minimum=1e-4):
+                 global_step=None, linear_w_minimum=1e-4, dropout_rate=None):
 
         if learning_task_type == LearningTaskType.UNSUPERVISED and \
                 learning_method == LearningMethodType.DISCRIMINATIVE:
@@ -43,6 +43,7 @@ class GDLearning:
 
         self._root = root
         self._marginalizing_root = marginalizing_root
+        self._dropout_rate = dropout_rate
 
         if value is not None and isinstance(value, LogValue):
             self._log_value = value
@@ -52,7 +53,7 @@ class GDLearning:
                     "{}: Value instance is ignored since the current implementation does "
                     "not support gradients with non-log inference. Using a LogValue instance "
                     "instead.".format(name))
-            self._log_value = LogValue(value_inference_type)
+            self._log_value = LogValue(value_inference_type, dropout_rate=dropout_rate)
         self._learning_rate = learning_rate
         self._learning_task_type = learning_task_type
         self._learning_method = learning_method
@@ -153,7 +154,7 @@ class GDLearning:
             A Tensor corresponding to the cross-entropy loss.
         """
         with tf.name_scope(name):
-            log_prob_data_and_labels = LogValue().get_value(self._root)
+            log_prob_data_and_labels = self._log_value.get_value(self._root)
             log_prob_data = self._log_likelihood()
             return -reduce_fn(log_prob_data_and_labels - log_prob_data)
 

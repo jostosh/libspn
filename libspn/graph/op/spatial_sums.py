@@ -171,8 +171,8 @@ class SpatialSums(BaseSum, abc.ABC):
 
     @utils.docinherit(BaseSum)
     @utils.lru_cache
-    def _compute_log_value(self, w_tensor, latent_indicators_tensor, *input_tensors, matmul_or_conv=False,
-                           noise=None, batch_noise=None):
+    def _compute_log_value(self, w_tensor, latent_indicators_tensor, *input_tensors,
+                           matmul_or_conv=False, dropout_rate=None):
 
         if matmul_or_conv and latent_indicators_tensor is not None:
             self.logger.warn("Cannot use matmul when using latent indicators, setting matmul=False")
@@ -182,6 +182,11 @@ class SpatialSums(BaseSum, abc.ABC):
             self.logger.debug1("{}: using matrix multiplication or conv ops.".format(self))
             w_tensor, _, inp_concat = self._prepare_component_wise_processing(
                 w_tensor, latent_indicators_tensor, *input_tensors)
+
+            if dropout_rate is not None:
+                dropout_mask = tf.less(tf.random.uniform(tf.shape(inp_concat)), dropout_rate)
+                inp_concat = tf.where(
+                    dropout_mask, tf.log(0.0) * tf.ones_like(inp_concat), inp_concat)
 
             # Determine whether to use matmul or conv op and return
             if all(w_tensor.shape[i] == 1 for i in self._op_axis):
