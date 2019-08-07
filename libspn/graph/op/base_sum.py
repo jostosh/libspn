@@ -316,6 +316,10 @@ class BaseSum(OpNode, abc.ABC):
 
         if dropout_rate is not None:
             dropout_mask = tf.less(tf.random.uniform(tf.shape(reducible)), dropout_rate)
+            dropout_mask = tf.where(
+                tf.equal(dropout_mask, tf.reduce_max(dropout_mask, axis=-1, keep_dims=True)),
+                tf.zeros_like(dropout_mask), dropout_mask
+            )
             reducible = tf.where(
                 dropout_mask, tf.log(0.0) * tf.ones_like(reducible), reducible)
 
