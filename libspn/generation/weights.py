@@ -17,11 +17,13 @@ class WeightsGenerator:
         log (bool): If "True", the weights are represented in log space.
     """
 
-    def __init__(self, initializer=tf.initializers.constant(1.0), trainable=True, log=False):
+    def __init__(self, initializer=tf.initializers.constant(1.0), trainable=True,
+                 log=False, reparameterize=False):
         self._weights = {}
         self.initializer = initializer
         self.trainable = trainable
         self._log = log
+        self._reparameterize = reparameterize
 
     @property
     def weights(self):
@@ -40,7 +42,7 @@ class WeightsGenerator:
                 self._weights[node] = node.generate_weights(
                     initializer=self.initializer, trainable=self.trainable,
                     input_sizes=node._gather_input_sizes(*input_out_sizes),
-                    log=self._log)
+                    log=self._log, reparameterize=self._reparameterize)
             return node._compute_out_size(*input_out_sizes)
 
         with tf.name_scope("Weights"):
@@ -49,7 +51,8 @@ class WeightsGenerator:
             return compute_graph_up(root, val_fun=gen)
 
 
-def generate_weights(root, initializer=tf.initializers.constant(1.0), trainable=True, log=False):
+def generate_weights(root, initializer=tf.initializers.constant(1.0), trainable=True,
+                     log=False, reparameterize=False):
     """A helper function for quick generation of sum weights in the SPN graph.
 
     Args:
@@ -58,4 +61,6 @@ def generate_weights(root, initializer=tf.initializers.constant(1.0), trainable=
         trainable: See :class:`~libspn.Weights`.
         log (bool): If "True", the weights are represented in log space.
     """
-    WeightsGenerator(initializer=initializer, trainable=trainable, log=log).generate(root)
+    WeightsGenerator(
+        initializer=initializer, trainable=trainable, log=log,
+        reparameterize=reparameterize).generate(root)

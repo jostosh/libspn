@@ -99,19 +99,20 @@ def configs():
         completion=False,
         completion_by_marginal=False,
         dist='normal',
-        log_weights=False,
-        sum_num_c0=32, sum_num_c1=32, sum_num_c2=64, sum_num_c3=64, sum_num_c4=64,
+        log_weights=True,
+        sum_num_c0=32, sum_num_c1=32, sum_num_c2=32, sum_num_c3=32, sum_num_c4=32,
         normalize_data=True,
         equidistant_means=True,
         estimate_scale=False,
         fixed_mean=False,
         fixed_variance=True,
-        weight_init_min=0.1,
-        weight_init_max=1.0,
+        reparameterized_weights=True,
+        # weight_init_min=0.1,
+        # weight_init_max=1.0,
         learning_rate=1e-4,
         minimal_value_multiplier=1e-4,
         stop_epsilon=1e-5,
-        dropout_rate=0.25
+        # dropout_rate=0.25
     )
 
     generative_additive_smoothing = dict(

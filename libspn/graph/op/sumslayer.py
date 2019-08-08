@@ -173,7 +173,7 @@ class SumsLayer(BaseSum):
         return np.less(indices, sizes)  # Use broadcasting
 
     def generate_weights(self, initializer=tf.initializers.constant(1.0), trainable=True,
-                         input_sizes=None, log=False, name=None):
+                         input_sizes=None, log=False, name=None, reparameterize=False):
         """Generate a weights node matching this sum node and connect it to
         this sum.
 
@@ -210,7 +210,8 @@ class SumsLayer(BaseSum):
         # Generate weights
         weights = Weights(initializer=initializer, num_weights=max_size,
                           num_sums=len(sum_input_sizes), log=log,
-                          trainable=trainable, mask=mask.tolist(), name=name)
+                          trainable=trainable, mask=mask.tolist(), name=name,
+                          reparameterize=reparameterize)
         self.set_weights(weights)
         return weights
 

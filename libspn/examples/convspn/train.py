@@ -56,9 +56,10 @@ def train(args):
         [test_x, test_y], batch_size=args.eval_batch_size, shuffle=False)
 
     in_var, root = build_spn(args, num_dims, num_vars, train_x, train_y)
-    spn.generate_weights(
-        root, log=args.log_weights,
-        initializer=tf.initializers.random_uniform(args.weight_init_min, args.weight_init_max))
+    initializer = tf.initializers.truncated_normal(stddev=5e-1) if args.reparameterized_weights \
+        else tf.initializers.random_uniform(args.weight_init_min, args.weight_init_max)
+    spn.generate_weights(root, log=args.log_weights, initializer=initializer,
+                         reparameterize=args.reparameterized_weights)
 
     correct, labels_node, loss, likelihood, update_op, pred_op, reg_loss, loss_per_sample, \
         completion_op, update_commit, reset_op = setup_learning(args, in_var, root)
@@ -419,12 +420,17 @@ def setup_learning(args, in_var, root):
         'rmsprop': lambda: tf.train.RMSPropOptimizer(learning_rate=args.learning_rate),
         'amsgrad': lambda: AMSGrad(learning_rate=args.learning_rate),
     }[args.learning_algo]()
-    minimize_op, _ = learning.learn(optimizer=optimizer)
+    minimize_op, _ = learning.learn(
+        optimizer=optimizer, post_gradient_ops=not args.reparameterized_weights)
 
     logger.info("Settting up test loss")
     with tf.name_scope("DeterministicLoss"):
-        main_loss = learning.loss()
-        loss_per_sample = learning.loss(reduce_fn=lambda x: tf.reshape(x, (-1,)))
+        learning_deterministic = spn.GDLearning(
+            root, learning_task_type=spn.LearningTaskType.SUPERVISED if args.supervised else \
+                spn.LearningTaskType.UNSUPERVISED,
+            learning_method=learning_method, marginalizing_root=root_marginalized)
+        main_loss = learning_deterministic.loss()
+        loss_per_sample = learning_deterministic.loss(reduce_fn=lambda x: tf.reshape(x, (-1,)))
 
     return correct, labels_node, main_loss, no_labels_llh, minimize_op, class_mpe, \
            no_op, loss_per_sample, in_var_mpe, no_op, no_op
@@ -588,6 +594,9 @@ if __name__ == "__main__":
     params.add_argument("--l0_prior_factor", type=float, default=0.0)
     params.add_argument("--dropout_rate", type=float, default=None)
 
+    params.add_argument(
+        "--reparameterized_weights", action="store_true", dest="reparameterize_weights")
+
     params.set_defaults(discrete=False, predict_each_epoch=False,
                         uniform_priors=False, reparam_weights=False, sparse_range=True,
                         share_scales=False, unnormalized_leafs=False, student_t=False,
@@ -596,7 +605,7 @@ if __name__ == "__main__":
                         supervised=True, estimate_scale=False, only_root_marginalize=False,
                         normalize_data=False, tensor_spn=False, fixed_variance=False,
                         log_weights=False, equidistant_means=False, first_depthwise=False,
-                        sample_path=False, use_unweighted=False)
+                        sample_path=False, use_unweighted=False, reparameterized_weights=False)
     args = params.parse_args()
     pprint.pprint(vars(args))
     train(args)

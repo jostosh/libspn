@@ -26,7 +26,7 @@ class Weights(ParamNode):
     """
 
     def __init__(self, initializer=tf.initializers.constant(1.0), num_weights=1, num_sums=1,
-                 log=False, trainable=True, mask=None, name="Weights"):
+                 log=False, trainable=True, mask=None, name="Weights", reparameterize=False):
         if not isinstance(num_weights, int) or num_weights < 1:
             raise ValueError("num_weights must be a positive integer")
 
@@ -40,6 +40,7 @@ class Weights(ParamNode):
         self._log = log
         self._trainable = trainable
         self._mask = mask
+        self._reparameterize = reparameterize
         super().__init__(name)
 
     def serialize(self):
@@ -208,8 +209,12 @@ class Weights(ParamNode):
         Returns:
             Variable: A TF variable of shape ``[num_weights]``.
         """
+
         shape = (self._num_sums, self._num_weights)
         init_val = self._initializer(shape=shape, dtype=conf.dtype)
+        if self._reparameterize:
+            self._variable = tf.Variable(init_val, dtype=conf.dtype)
+            return
         if self._mask and not all(self._mask):
             # Only perform masking if mask is given and mask contains any 'False'
             init_val *= tf.cast(tf.reshape(self._mask, init_val.shape), dtype=conf.dtype)
@@ -227,9 +232,11 @@ class Weights(ParamNode):
     @utils.lru_cache
     def _compute_log_value(self):
         if self._log:
-            return self._variable
+            return self._variable if not self._reparameterize else tf.nn.log_softmax(
+                self._variable, axis=-1)
         else:
-            return tf.log(self._variable)
+            return tf.log(self._variable) if not self._reparameterize else tf.nn.log_softmax(
+                tf.log(self._variable), axis=-1)
 
     def _compute_hard_gd_update(self, grads):
         if len(grads.shape) == 3:

@@ -225,7 +225,7 @@ class BaseSum(OpNode, abc.ABC):
         self._reset_sum_sizes()
 
     def generate_weights(self, initializer=tf.initializers.constant(1.0), trainable=True,
-                         input_sizes=None, log=False, name=None):
+                         input_sizes=None, log=False, name=None, reparameterize=False):
         """Generate a weights node matching this sum node and connect it to
         this sum.
 
@@ -258,7 +258,7 @@ class BaseSum(OpNode, abc.ABC):
         # Generate weights
         weights = Weights(
             initializer=initializer, num_weights=num_values, num_sums=self._num_sums,
-            log=log, trainable=trainable, name=name)
+            log=log, trainable=trainable, name=name, reparameterize=reparameterize)
         self.set_weights(weights)
         return weights
 
@@ -314,7 +314,7 @@ class BaseSum(OpNode, abc.ABC):
         w_tensor, latent_indicators_tensor, reducible = self._prepare_component_wise_processing(
             w_tensor, latent_indicators_tensor, *input_tensors, zero_prob_val=-float('inf'))
 
-        if dropout_rate is not None:
+        if dropout_rate is not None and not self._latent_indicators:
             random_tensor = tf.random.uniform(tf.shape(reducible))
             eq_max = tf.equal(random_tensor, tf.reduce_max(random_tensor, keepdims=True, axis=-1))
             keep_mask = tf.logical_or(eq_max, tf.greater(random_tensor, dropout_rate))
