@@ -42,7 +42,28 @@ def configs():
         minimal_value_multiplier=1e-4,
         stop_epsilon=1e-1,
         update_period_unit="step",
-        update_period_value=8
+        update_period_value=8,
+    )
+
+    small_olivetti = dict(
+        sum_num_c0=2, sum_num_c1=2, sum_num_c2=2, sum_num_c3=2, sum_num_c4=2,
+        not_depthwise=True, first_depthwise=True, num_components=4,
+        batch_size=64, update_period_value=2, num_epochs=25, equidistant_means=False,
+        additive_smoothing=1e-2, minimal_value_multiplier=0.0
+    )
+
+    soft_em = dict(
+        sum_num_c0=32, sum_num_c1=32, sum_num_c2=32, sum_num_c3=32, sum_num_c4=32,
+        not_depthwise=False, num_components=16,
+        learning_algo='soft_em', batch_size=32, update_period_value=1,
+        minimal_value_multiplier=1e-4, stop_epsilon=1e-3, num_epochs=100
+    )
+
+    small_caltech = dict(
+        sum_num_c0=16, sum_num_c1=16, sum_num_c2=16, sum_num_c3=16, sum_num_c4=16,
+        not_depthwise=False, first_depthwise=False, num_components=4,
+        batch_size=16, update_period_value=8, num_epochs=25, equidistant_means=False,
+        additive_smoothing=1e-2, minimal_value_multiplier=0.0, stop_epsilon=0.1
     )
 
     generative_olivetti_caltech = dict(
@@ -62,10 +83,12 @@ def configs():
         fixed_variance=True,
         weight_init_min=1.0,
         weight_init_max=1.0,
-        minimal_value_multiplier=1e-4,
+        minimal_value_multiplier=1e-2,
         stop_epsilon=1e-1,
         update_period_unit="step",
-        update_period_value=4
+        update_period_value=4,
+        num_components=32,
+        first_depthwise=True
     )
 
     generative_mnist = dict(
@@ -94,29 +117,48 @@ def configs():
     discriminative_mnist = dict(
         unsupervised=False,
         learning_algo='adam',
-        batch_size=32,
-        num_epochs=25,
+        batch_size=64,
+        num_epochs=400,
+        eval_batch_size=128,
         completion=False,
         completion_by_marginal=False,
         dist='normal',
         log_weights=True,
-        sum_num_c0=32, sum_num_c1=32, sum_num_c2=32, sum_num_c3=32, sum_num_c4=32,
+        sum_num_c0=64, sum_num_c1=64, sum_num_c2=64, sum_num_c3=128, sum_num_c4=128,
         normalize_data=True,
+        normalize_batch_wise=False,
         equidistant_means=True,
         estimate_scale=False,
         fixed_mean=False,
         fixed_variance=True,
         reparameterized_weights=True,
-        # weight_init_min=0.1,
-        # weight_init_max=1.0,
-        learning_rate=1e-4,
+        lr_decay_rate=1.0,
+        variance_init=1.0,
+        learning_rate=1e-3,
         minimal_value_multiplier=1e-4,
-        stop_epsilon=1e-5,
-        # dropout_rate=0.25
+        stop_epsilon=1e-8,
+        input_dropout=0.2,
+        dropout_rate=0.2,
+        first_depthwise=True,
+        num_components=32
+    )
+
+    cauchy = dict(
+        dist='cauchy'
+    )
+
+    exp_l2 = dict(
+        learning_rate=1e-2,
+        exp_l2=1e-3
+    )
+
+    export_completions = dict(
+        export_completions=True,
+        num_epochs=25
     )
 
     generative_additive_smoothing = dict(
-        additive_smoothing=1e-2,
+        additive_smoothing=1.0,
         minimal_value_multiplier=0.0
     )
 
@@ -134,7 +176,7 @@ def configs():
     )
 
     generative_l0_prior = dict(
-        l0_prior_factor=0.1
+        l0_prior_factor=1e-1
     )
 
     generative_l0_prior01 = dict(
@@ -189,29 +231,43 @@ def configs():
         rotation_range=5,
         shear_range=0.1
     )
+
     
-    mnist_common = dict(dataset='mnist', num_components=4)
-    fashion_mnist_common = dict(dataset='fashion_mnist', num_components=4)
+    mnist_common = dict(dataset='mnist')
+    fashion_mnist_common = dict(dataset='fashion_mnist')
     olivetti_common = dict(dataset='olivetti', num_components=4)
     caltech_common = dict(dataset='caltech', num_components=4)
-    cifar10_common = dict(dataset='cifar10', num_components=32, first_depthwise=True)
+    cifar10_common = dict(dataset='cifar10')
     return dict(
         mnist=[
-            # (combine_dicts(generative_mnist, mnist_common, dict(name="MNISTCompletionBase")), None),
-            # (combine_dicts(generative_mnist, mnist_common, generative_use_unweighted, dict(name="MNISTCompletionUnweighted")), None),
-            (combine_dicts(discriminative_mnist, mnist_common, dict(name="MNISTClassAdam")), None),
+            # (combine_dicts(generative_mnist, mnist_common, generative_additive_smoothing, export_completions, dict(name="MNISTCompletionBaseExport")), None),
+            (combine_dicts(generative_mnist, mnist_common, small_caltech, dict(name="MNISTBase2")), None),
+            (combine_dicts(generative_mnist, mnist_common, generative_use_unweighted, small_caltech, dict(name="MNISTCompletionUnweighted2")), None),
+            # (combine_dicts(discriminative_mnist, mnist_common, dict(name="MNISTClassAdam")), None),
+            # (combine_dicts(discriminative_mnist, mnist_common, exp_l2, dict(name="MNISTClassAdamExpL2")), None),
             # (combine_dicts(discriminative, mnist_common, augmentation, dict(name="MNIST_Discriminative_Augmented")), discriminative_grid)
         ],
         fashion_mnist=[
-            (combine_dicts(generative_mnist, fashion_mnist_common, dict(name="FMNISTCompletionBase")), None),
-            (combine_dicts(generative_mnist, fashion_mnist_common, generative_use_unweighted,
-                           dict(name="FMNISTCompletionUnweighted")), None),
+            (combine_dicts(generative_mnist, fashion_mnist_common, small_caltech, dict(name="FMNISTCompletionBase2")), None),
+            (combine_dicts(generative_mnist, fashion_mnist_common, generative_use_unweighted, small_caltech,
+                           dict(name="FMNISTCompletionUnweighted2")), None),
+            # (combine_dicts(discriminative_mnist, fashion_mnist_common, dict(name="FMNISTAdam")), None),
         ],
         olivetti=[
-            # (combine_dicts(generative_olivetti_poon, olivetti_common, dict(name="Base")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
-            #                generative_use_unweighted, dict(name="Unweighted")), None),
-            # (combine_dicts(generative_olivetti_poon, olivetti_common,
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, small_olivetti, dict(name="BaseFair3")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, small_olivetti,
+            #                generative_use_unweighted, dict(name="UnweightedFair3")), None),
+            (combine_dicts(generative_olivetti_poon, olivetti_common, small_olivetti, cauchy,
+                           generative_use_unweighted, dict(name="OlivettiCauchy")), None),
+
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, small_olivetti, soft_em,
+            #                dict(name="OlivettiSoftEM")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, small_olivetti,
+            #                generative_l0_prior, generative_additive_smoothing,
+            #                dict(name="L0PriorFair")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, small_olivetti, export_completions,
+            #                generative_use_unweighted, dict(name="UnweightedFairExport")), None),
+            # (combine_dicts(generative_olivetti_poon, olivetti_common, small_olivetti,
             #                generative_l0_prior, dict(name="L0Prior")), None),
             # (combine_dicts(generative_olivetti_poon, olivetti_common,
             #                generative_l0_prior01, dict(name="L0Prior01")), None),
@@ -221,16 +277,17 @@ def configs():
             #                generative_reset_per5, dict(name="ResetPer5")), None),
         ],
         caltech=[
-            (combine_dicts(generative_olivetti_caltech, caltech_common, dict(name="CaltechBase")), None),
-            (combine_dicts(generative_olivetti_caltech, caltech_common, generative_use_unweighted,
-                           dict(name="CaltechUnweighted")), None),
-            (combine_dicts(generative_olivetti_caltech, caltech_common, generative_reset_per5,
-                           dict(name="CaltechResetPer5")), None),
+            (combine_dicts(generative_olivetti_poon, caltech_common, small_caltech, dict(name="CaltechBase3")), None),
+            (combine_dicts(generative_olivetti_poon, caltech_common, small_caltech, generative_use_unweighted,
+                           dict(name="CaltechUnweighted3")), None),
+            # (combine_dicts(generative_olivetti_caltech, caltech_common, generative_reset_per5,
+            #                dict(name="CaltechResetPer5")), None),
         ],
         cifar10=[
-            (combine_dicts(discriminative, cifar10_common, dict(name="Cifar10_Discriminative")), discriminative_grid),
-            (combine_dicts(discriminative, cifar10_common, augmentation,
-                           dict(name="Cifar10_Generative_Augmented")), discriminative_grid)
+            # (combine_dicts(discriminative, cifar10_common, dict(name="Cifar10_Discriminative")), discriminative_grid),
+            # (combine_dicts(discriminative, cifar10_common, augmentation,
+            #                dict(name="Cifar10_Generative_Augmented")), discriminative_grid),
+            (combine_dicts(discriminative_mnist, cifar10_common, dict(name="Cifar10")), None),
         ]
     )
 
@@ -261,39 +318,42 @@ def experiment_group(defaults, grid_params):
     defaults = deepcopy(defaults)
 
     if grid_params is None:
-        cmd = ['python3', './train.py'] + [key_val_to_arg(k, v) for k, v in defaults.items()]
-        cmd = [c for c in cmd if len(c)]
 
-        print("Running\n", ' '.join(cmd))
-        process = subprocess.Popen(cmd)
-        try:
-            stdout, stderr = process.communicate()
-        except KeyboardInterrupt as e:
-            raise e
-        finally:
+        for _ in range(args.repeat):
+            cmd = ['python3', './train.py'] + [key_val_to_arg(k, v) for k, v in defaults.items()]
+            cmd = [c for c in cmd if len(c)]
+
+            print("Running\n", ' '.join(cmd))
+            process = subprocess.Popen(cmd)
             try:
-                process.terminate()
-            except OSError:
-                pass
+                stdout, stderr = process.communicate()
+            except KeyboardInterrupt as e:
+                raise e
+            finally:
+                try:
+                    process.terminate()
+                except OSError:
+                    pass
         return
 
     del defaults['name']
-    for gp in itertools.product(*list(grid_params.values())):
-        name_suffix = '_'.join(["{}={}".format(abbreviate(k), v) for k, v in zip(grid_params.keys(), gp)])
-        cmd = ['python3', './train.py'] + [key_val_to_arg(k, v) for k, v in defaults.items()] + \
-            [key_val_to_arg(k, v) for k, v in zip(grid_params.keys(), gp)] + ["--name={}_{}".format(name_prefix, name_suffix)]
-        cmd = [c for c in cmd if len(c)]
-        print("Running\n", ' '.join(cmd))
-        process = subprocess.Popen(cmd)
-        try:
-            stdout, stderr = process.communicate()
-        except KeyboardInterrupt as e:
-            raise e
-        finally:
+    for _ in range(args.repeat):
+        for gp in itertools.product(*list(grid_params.values())):
+            name_suffix = '_'.join(["{}={}".format(abbreviate(k), v) for k, v in zip(grid_params.keys(), gp)])
+            cmd = ['python3', './train.py'] + [key_val_to_arg(k, v) for k, v in defaults.items()] + \
+                [key_val_to_arg(k, v) for k, v in zip(grid_params.keys(), gp)] + ["--name={}_{}".format(name_prefix, name_suffix)]
+            cmd = [c for c in cmd if len(c)]
+            print("Running\n", ' '.join(cmd))
+            process = subprocess.Popen(cmd)
             try:
-                process.terminate()
-            except OSError:
-                pass
+                stdout, stderr = process.communicate()
+            except KeyboardInterrupt as e:
+                raise e
+            finally:
+                try:
+                    process.terminate()
+                except OSError:
+                    pass
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ class CauchyLeaf(LocationScaleLeaf):
     def __init__(self, feed=None, num_vars=1, num_components=2, name="CauchyLeaf",
                  trainable_loc=True, loc_init=Equidistant(), scale_init=1.0,
                  min_scale=1e-2, evidence_indicator_feed=None, softplus_scale=False,
-                 trainable_scale=False,
+                 trainable_scale=False, initialization_data=None,
                  share_scales=False, share_locs_across_vars=False, samplewise_normalization=False):
         super().__init__(
             feed=feed, evidence_indicator_feed=evidence_indicator_feed,
@@ -46,7 +46,8 @@ class CauchyLeaf(LocationScaleLeaf):
             trainable_scale=trainable_scale, loc_init=loc_init, scale_init=scale_init,
             min_scale=min_scale, softplus_scale=softplus_scale, name=name, dimensionality=1,
             share_scales=share_scales, share_locs_across_vars=share_locs_across_vars,
-            samplewise_normalization=samplewise_normalization)
+            samplewise_normalization=samplewise_normalization,
+            initialization_data=initialization_data)
 
     def _create_dist(self):
         if self._softplus_scale:

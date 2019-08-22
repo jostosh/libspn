@@ -316,9 +316,9 @@ class BaseSum(OpNode, abc.ABC):
 
         if dropout_rate is not None and not self._latent_indicators:
             random_tensor = tf.random.uniform(tf.shape(reducible))
-            eq_max = tf.equal(random_tensor, tf.reduce_max(random_tensor, keepdims=True, axis=-1))
-            keep_mask = tf.logical_or(eq_max, tf.greater(random_tensor, dropout_rate))
-            reducible = tf.where(keep_mask, reducible, tf.log(0.0) * tf.ones_like(reducible))
+            keep_rate = 1 - dropout_rate
+            keep_mask = tf.log(tf.floor(random_tensor + keep_rate))
+            reducible += keep_mask
 
         # Apply latent IndicatorLeaf
         if self._latent_indicators:

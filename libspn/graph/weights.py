@@ -213,7 +213,7 @@ class Weights(ParamNode):
         shape = (self._num_sums, self._num_weights)
         init_val = self._initializer(shape=shape, dtype=conf.dtype)
         if self._reparameterize:
-            self._variable = tf.Variable(init_val, dtype=conf.dtype)
+            self._variable = tf.Variable(init_val, dtype=conf.dtype, trainable=self._trainable)
             return
         if self._mask and not all(self._mask):
             # Only perform masking if mask is given and mask contains any 'False'
@@ -222,7 +222,7 @@ class Weights(ParamNode):
         if self._log:
             init_val = tf.log(init_val)
 
-        self._variable = tf.Variable(init_val, dtype=conf.dtype)
+        self._variable = tf.Variable(init_val, dtype=conf.dtype, trainable=self._trainable)
 
 
     @utils.lru_cache

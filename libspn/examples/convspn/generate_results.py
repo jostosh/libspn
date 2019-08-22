@@ -9,6 +9,8 @@ hyperparams = []
 
 group_by_columns = ['l0_prior_factor', 'sample_path', 'use_unweighted', '']
 
+# metrics = ['accuracy']
+metrics = ['l2_b', 'l2_l']
 
 for name in listdirs(base):
     for run in listdirs(opth.join(base, name)):
@@ -16,6 +18,8 @@ for name in listdirs(base):
 
         if opth.exists(path):
             df = pd.read_csv(path).tail(n=1)
+            if not all(m in df.columns for m in metrics):
+                continue
             df['run'] = run
             df['name'] = name
             dfs.append(df)
@@ -41,7 +45,6 @@ hyperparams_unique.drop_duplicates().transpose().to_csv('hyperparams_uniq.csv', 
 
 df = pd.concat(dfs)
 
-metrics = ['l2_b', 'l2_l']
 
 results = df.groupby(by='name').agg({k: ['mean', 'std'] for k in metrics})
 results.columns = ['_'.join(col).strip() for col in results.columns.values]

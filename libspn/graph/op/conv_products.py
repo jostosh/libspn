@@ -338,7 +338,7 @@ class ConvProducts(OpNode):
         pad_left, pad_right, pad_bottom, pad_top = self.pad_sizes()
         if not any([pad_bottom, pad_left, pad_right, pad_top]):
             return self._split_to_children(input_counts)
-        return self._split_to_children(input_counts[:, pad_top:-pad_bottom, pad_left:-pad_right, :])
+        return self._split_to_children(input_counts[:, pad_bottom:-pad_top, pad_left:-pad_right, :])
 
     @utils.lru_cache
     def _prepare_convolutional_processing(self, *input_values):

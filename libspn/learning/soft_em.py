@@ -32,22 +32,24 @@ class SoftEMLearning:
     def update_spn(self):
         # Generate all update operations 
         with tf.name_scope(self._name_scope):
-            weight_nodes, weight_vars, log_weights = zip(*[
-                (n, n.variable, log_w) for n, log_w in self._val_gen.values.items()
+            weight_nodes, weight_vars = zip(*[
+                (n, n.variable) for n in self._val_gen.values.keys()
                 if isinstance(n, Weights)
             ])
 
             w_grads = tf.gradients(self._root_val, list(weight_vars))
 
-            accumulators_w = [tf.Variable(tf.ones_like(w) * self._minimum_accumulator_multiplier / tf.cast(tf.shape(w)[1], tf.float32))
-                              for w in weight_vars]
+            accumulators_w = [
+                tf.Variable(tf.ones_like(w) * self._minimum_accumulator_multiplier / tf.cast(tf.shape(w)[1], tf.float32))
+                for w in weight_vars
+            ]
 
             acc_update = [tf.assign_add(a, wg) for a, wg in zip(accumulators_w, w_grads)]
 
 
             with tf.control_dependencies(acc_update):
                 accumulators_decayed = [
-                    tf.maximum(acc, self._minimum_accumulator_multiplier / tf.cast(tf.shape(acc)[1], tf.float32))
+                    tf.maximum(acc - self._minimum_accumulator_multiplier / tf.cast(tf.shape(acc)[1], tf.float32), self._minimum_accumulator_multiplier / tf.cast(tf.shape(acc)[1], tf.float32))
                     for acc in accumulators_w]
                 return tf.group(
                     *(

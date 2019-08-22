@@ -53,46 +53,27 @@ class NormalLeaf(LocationScaleLeaf):
     """
 
     def __init__(self, feed=None, evidence_indicator_feed=None, num_vars=1, num_components=2,
-                 initialization_data=None, estimate_scale=True, total_counts_init=1.0,
+                 initialization_data=None, estimate_scale=False, total_counts_init=1.0,
                  trainable_loc=True, trainable_scale=False,
-                 loc_init=Equidistant(),
-                 scale_init=1.0, use_prior=False, prior_alpha=2.0, prior_beta=3.0,
+                 loc_init=Equidistant(), scale_init=1.0,
                  min_scale=1e-2, softplus_scale=True, name="NormalLeaf",
                  share_locs_across_vars=False, share_scales=False, samplewise_normalization=False):
-        self._initialization_data = initialization_data
-        self._estimate_scale_init = estimate_scale
-        self._use_prior = use_prior
-        self._prior_alpha = prior_alpha
-        self._prior_beta = prior_beta
+        self._estimate_scale = estimate_scale
         super().__init__(
             feed=feed, name=name, dimensionality=1, num_components=num_components,
             num_vars=num_vars, evidence_indicator_feed=evidence_indicator_feed,
             softplus_scale=softplus_scale, loc_init=loc_init, trainable_loc=trainable_loc,
             trainable_scale=trainable_scale, scale_init=scale_init, min_scale=min_scale,
             total_counts_init=total_counts_init, share_locs_across_vars=share_locs_across_vars,
-            share_scales=share_scales, samplewise_normalization=samplewise_normalization)
-        self._initialization_data = None
-
-    def init_variables(self, shape, loc_init, scale_init, softplus_scale):
-        super().init_variables(shape, loc_init, scale_init, softplus_scale)
-        if self._initialization_data is not None:
-            if len(self._initialization_data.shape) != 2:
-                raise ValueError("Initialization data must of rank 2")
-            if self._initialization_data.shape[1] != shape[0]:
-                raise ValueError("Initialization data samples must have as many components as "
-                                 "there are variables in this NormalLeaf node.")
-            self.initialize_from_quantiles(
-                self._initialization_data, num_quantiles=shape[1],
-                estimate_variance=self._estimate_scale_init, use_prior=self._use_prior,
-                prior_alpha=self._prior_alpha, prior_beta=self._prior_beta)
+            share_scales=share_scales, samplewise_normalization=samplewise_normalization,
+            initialization_data=initialization_data)
 
     def _create_dist(self):
         if self._softplus_scale:
             return tfd.Normal(self._loc_variable, tf.nn.softplus(self._scale_variable))
         return tfd.Normal(self._loc_variable, self._scale_variable)
 
-    def initialize_from_quantiles(self, data, num_quantiles, estimate_variance=True,
-                                  use_prior=False, prior_alpha=2.0, prior_beta=3.0):
+    def initialize_from_quantiles(self, data, num_quantiles):
         """Initializes the data from its quantiles per variable using the method described in
         Poon&Domingos UAI'11.
 
@@ -108,44 +89,13 @@ class NormalLeaf(LocationScaleLeaf):
         values_per_quantile = self._split_in_quantiles(data, num_quantiles)
 
         means = [np.mean(values, axis=0) for values in values_per_quantile]
-
-        if use_prior:
-            sum_sq = [np.sum((x - np.expand_dims(mu, 0)) ** 2, axis=0)
-                      for x, mu in zip(values_per_quantile, means)]
-            variance = [(2 * prior_beta + ssq) / (2 * prior_alpha + 2 + ssq.shape[0])
-                        for ssq in sum_sq]
-        else:
-            variance = [np.var(values, axis=0) for values in values_per_quantile]
-
         self._loc_init = np.stack(means, axis=-1)
-        variance = np.stack(variance, axis=-1)
-        if estimate_variance:
-            self._scale_init = _softplus_inverse_np(np.sqrt(variance)) if self._softplus_scale \
-                else np.sqrt(variance)
+
+        if self._estimate_scale:
+            scales = [np.std(values, axis=0) for values in values_per_quantile]
+            scales = np.stack(scales, axis=-1)
+            self._scale_init = _softplus_inverse_np(scales) if self._softplus_scale else scales
             self._scale_init = np.maximum(self._scale_init, self._min_scale)
-
-    def _split_in_quantiles(self, data, num_quantiles):
-        """Given data, finds quantiles of it along zeroth axis. Each quantile is assigned to a
-        component. Taken from "Sum-Product Networks: A New Deep Architecture"
-        (Poon and Domingos 2012), https://arxiv.org/abs/1202.3732.
-
-        Params:
-            data (numpy.ndarray): Numpy array containing data to split into quantiles.
-
-        Returns:
-            Data per quantile: a list of numpy.ndarray corresponding to quantiles.
-        """
-        if self._sample_wise_normalization:
-            reduce_axes = tuple(range(1, len(data.shape)))
-            data = (data - np.mean(data, axis=reduce_axes, keepdims=True)) \
-                   / np.std(data, axis=reduce_axes, keepdims=True)
-        batch_size = data.shape[0]
-        quantile_sections = np.arange(
-            batch_size // num_quantiles, batch_size, int(np.ceil(batch_size / num_quantiles)))
-        sorted_features = np.sort(data, axis=0).astype(np.float32)
-        values_per_quantile = np.split(
-            sorted_features, indices_or_sections=quantile_sections, axis=0)
-        return values_per_quantile
 
     @utils.docinherit(Node)
     @utils.lru_cache

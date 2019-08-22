@@ -4,9 +4,17 @@ from os import path as opth
 import numpy as np
 from sklearn.datasets import olivetti_faces
 import tensorflow as tf
+from skimage.io import imsave
 
 tfk = tf.keras
 
+def normalize_batch_wise(train_x, test_x):
+    mu, sigma = np.mean(train_x, axis=0, keepdims=True), np.std(train_x, axis=0, keepdims=True)
+
+    def _z(x):
+        return (x - mu) / (sigma + 1.0)
+
+    return _z(train_x), _z(test_x)
 
 def load_fashion_mnist(args):
     (train_x, train_y), (test_x, test_y) = tfk.datasets.fashion_mnist.load_data()
@@ -18,6 +26,9 @@ def load_fashion_mnist(args):
     if not args.normalize_data:
         train_x /= 255.
         test_x /= 255.
+
+    if args.normalize_batch_wise:
+        train_x, test_x = normalize_batch_wise(train_x, test_x)
 
     return test_x, test_y, train_x, train_y
 
@@ -42,9 +53,13 @@ def load_mnist(args):
         train_x = np.greater(train_x, 20 / 256).astype(np.int32)
         test_x = np.greater(test_x, 20 / 256).astype(np.int32)
 
-    if not args.normalize_data:
-        train_x /= 255.
-        test_x /= 255.
+    # if not args.normalize_data:
+
+    if args.normalize_batch_wise:
+        train_x, test_x = normalize_batch_wise(train_x, test_x)
+    elif not args.normalize_data:
+        train_x = train_x / 255.
+        test_x = test_x / 255.
 
     return test_x, test_y, train_x, train_y
 
@@ -53,17 +68,30 @@ def load_olivetti(args):
     bunch = olivetti_faces.fetch_olivetti_faces()
     x, y = np.expand_dims(bunch.images, axis=-1), bunch.target
     train_x, train_y, test_x, test_y = [], [], [], []
-    for label in range(max(y) + 1):
-        x_class = x[y == label]
-        y_class = [label] * len(x_class)
-        # print(label, len(x_class))
-        test_size = min(30, len(x_class) // 3)
-        train_x.extend(x_class[:-test_size])
-        train_y.extend(y_class[:-test_size])
-        test_x.extend(x_class[-test_size:])
-        test_y.extend(y_class[-test_size:])
+
+    x = np.loadtxt("olivetti.raw").transpose().reshape(400, 64, 64, 1).transpose((0, 2, 1, 3)) / 255.
+
+    for i, (xi, yi) in enumerate(zip(x, y)):
+        if i < len(x) - 50:
+            train_x.append(xi)
+            train_y.append(yi)
+        else:
+            test_x.append(xi)
+            test_y.append(yi)
+
+    #
+    # for label in range(max(y) + 1):
+    #     x_class = x[y == label]
+    #     y_class = [label] * len(x_class)
+    #     # print(label, len(x_class))
+    #     test_size = min(30, len(x_class) // 3)
+    #     train_x.extend(x_class[:-test_size])
+    #     train_y.extend(y_class[:-test_size])
+    #     test_x.extend(x_class[-test_size:])
+    #     test_y.extend(y_class[-test_size:])
     train_x, test_x, train_y, test_y = np.asarray(train_x), np.asarray(test_x), \
                                        np.asarray(train_y), np.asarray(test_y)
+
     if args.normalize_data:
         return test_x * 255, test_y, train_x * 255, train_y
     return test_x, test_y, train_x, train_y

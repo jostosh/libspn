@@ -14,7 +14,7 @@ class LocationScaleLeaf(ContinuousLeafBase, abc.ABC):
 
     def __init__(self, feed=None, evidence_indicator_feed=None, num_vars=1, num_components=2,
                  total_counts_init=1.0, trainable_loc=True, trainable_scale=True,
-                 loc_init=Equidistant(),
+                 loc_init=Equidistant(), initialization_data=None,
                  scale_init=1.0, min_scale=1e-2, softplus_scale=True,
                  dimensionality=1, name="LocationScaleLeaf", component_axis=-1,
                  share_locs_across_vars=False, share_scales=False, samplewise_normalization=False):
@@ -23,7 +23,8 @@ class LocationScaleLeaf(ContinuousLeafBase, abc.ABC):
         variable_shape = self._variable_shape(num_vars, num_components, dimensionality)
         self._min_scale = min_scale if not softplus_scale else np.log(np.exp(min_scale) - 1)
         self._sample_wise_normalization = samplewise_normalization
-        self.init_variables(variable_shape, loc_init, scale_init, softplus_scale)
+        self.init_variables(variable_shape, loc_init, scale_init, softplus_scale,
+                            initialization_data)
         self._trainable_scale = trainable_scale
         self._trainable_loc = trainable_loc
         self._share_locs_across_vars = share_locs_across_vars
@@ -37,7 +38,7 @@ class LocationScaleLeaf(ContinuousLeafBase, abc.ABC):
         self._total_count_variable = self._total_accumulates(
             total_counts_init, (num_vars, num_components))
 
-    def init_variables(self, shape, loc_init, scale_init, softplus_scale):
+    def init_variables(self, shape, loc_init, scale_init, softplus_scale, initialization_data):
         # Initial value for means
         if isinstance(loc_init, float):
             self._loc_init = np.ones(shape, dtype=np.float32) * loc_init
@@ -48,6 +49,75 @@ class LocationScaleLeaf(ContinuousLeafBase, abc.ABC):
         self._scale_init = np.ones(shape, dtype=np.float32) * scale_init
         if softplus_scale:
             self._scale_init = _softplus_inverse_np(self._scale_init)
+
+        if initialization_data is not None:
+            if len(initialization_data.shape) != 2:
+                raise ValueError("Initialization data must of rank 2")
+            if initialization_data.shape[1] != shape[0]:
+                raise ValueError("Initialization data samples must have as many components as "
+                                 "there are variables in this NormalLeaf node.")
+            self.initialize_from_quantiles(initialization_data, num_quantiles=shape[1])
+
+
+    def _split_in_quantiles(self, data, num_quantiles):
+        """Given data, finds quantiles of it along zeroth axis. Each quantile is assigned to a
+        component. Taken from "Sum-Product Networks: A New Deep Architecture"
+        (Poon and Domingos 2012), https://arxiv.org/abs/1202.3732.
+
+        Params:
+            data (numpy.ndarray): Numpy array containing data to split into quantiles.
+
+        Returns:
+            Data per quantile: a list of numpy.ndarray corresponding to quantiles.
+        """
+        if self._sample_wise_normalization:
+            reduce_axes = tuple(range(1, len(data.shape)))
+            data = (data - np.mean(data, axis=reduce_axes, keepdims=True)) \
+                   / np.std(data, axis=reduce_axes, keepdims=True)
+        batch_size = data.shape[0]
+        quantile_sections = np.arange(
+            batch_size // num_quantiles, batch_size, int(np.ceil(batch_size / num_quantiles)))
+        sorted_features = np.sort(data, axis=0).astype(np.float32)
+        values_per_quantile = np.split(
+            sorted_features, indices_or_sections=quantile_sections, axis=0)
+        return values_per_quantile
+
+    def initialize_from_quantiles(self, data, num_quantiles):
+        """Initializes the data from its quantiles per variable using the method described in
+        Poon&Domingos UAI'11.
+
+        Args:
+            data (numpy.ndarray): Numpy array of shape [batch, num_vars] containing the data to
+            initialize the means and variances.
+        """
+        values_per_quantile = self._split_in_quantiles(data, num_quantiles)
+
+        means = [np.mean(values, axis=0) for values in values_per_quantile]
+
+        self._loc_init = np.stack(means, axis=-1)
+
+    def _split_in_quantiles(self, data, num_quantiles):
+        """Given data, finds quantiles of it along zeroth axis. Each quantile is assigned to a
+        component. Taken from "Sum-Product Networks: A New Deep Architecture"
+        (Poon and Domingos 2012), https://arxiv.org/abs/1202.3732.
+
+        Params:
+            data (numpy.ndarray): Numpy array containing data to split into quantiles.
+
+        Returns:
+            Data per quantile: a list of numpy.ndarray corresponding to quantiles.
+        """
+        if self._sample_wise_normalization:
+            reduce_axes = tuple(range(1, len(data.shape)))
+            data = (data - np.mean(data, axis=reduce_axes, keepdims=True)) \
+                   / np.std(data, axis=reduce_axes, keepdims=True)
+        batch_size = data.shape[0]
+        quantile_sections = np.arange(
+            batch_size // num_quantiles, batch_size, int(np.ceil(batch_size / num_quantiles)))
+        sorted_features = np.sort(data, axis=0).astype(np.float32)
+        values_per_quantile = np.split(
+            sorted_features, indices_or_sections=quantile_sections, axis=0)
+        return values_per_quantile
 
     @utils.docinherit(Node)
     def _create(self):

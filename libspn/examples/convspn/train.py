@@ -1,8 +1,9 @@
 from argparse import ArgumentParser
 
-from libspn.examples.convspn.architecture import wicker_convspn_two_non_overlapping, full_wicker
+from libspn.examples.convspn.architecture import wicker_convspn_two_non_overlapping, full_wicker, wicker_convspn_two_non_overlapping_conv
 from libspn.examples.convspn.data_loaders import load_fashion_mnist, load_cifar10, load_mnist, \
     load_olivetti, load_caltech
+from libspn.examples.convspn.nadam import NDAdamOptimizer
 from libspn.examples.convspn.utils import DataIterator, ImageIterator, ExperimentLogger, GroupedMetrics
 from libspn.examples.convspn.amsgrad import AMSGrad
 import tensorflow as tf
@@ -28,6 +29,21 @@ from libspn.graph.leaf.continuous_base import ContinuousLeafBase
 logger = get_logger()
 
 tfk = tf.keras
+
+
+def get_trainable_weights(root):
+    trainable_weights = []
+    def _get_w(node):
+        if isinstance(node, spn.Weights) and node._trainable:
+            trainable_weights.append(node.variable)
+
+    spn.traverse_graph(root, _get_w)
+    return trainable_weights
+
+
+def exp_l2_regularization(coeff, root):
+    with tf.name_scope("ExpL2Regularization"):
+        return coeff * tf.add_n([tf.reduce_sum(tf.exp(w)) for w in get_trainable_weights(root)])
 
 
 def train(args):
@@ -56,10 +72,16 @@ def train(args):
         [test_x, test_y], batch_size=args.eval_batch_size, shuffle=False)
 
     in_var, root = build_spn(args, num_dims, num_vars, train_x, train_y)
-    initializer = tf.initializers.truncated_normal(stddev=5e-1) if args.reparameterized_weights \
+    initializer = tf.initializers.truncated_normal(stddev=1.0) if args.reparameterized_weights \
         else tf.initializers.random_uniform(args.weight_init_min, args.weight_init_max)
     spn.generate_weights(root, log=args.log_weights, initializer=initializer,
                          reparameterize=args.reparameterized_weights)
+
+    if args.equal_priors:
+        root.set_weights(spn.Weights(
+            num_weights=root.weights.node.num_weights, num_sums=1, log=args.log_weights,
+            trainable=False, initializer=tf.initializers.ones(), reparameterize=args.reparameterized_weights
+        ))
 
     correct, labels_node, loss, likelihood, update_op, pred_op, reg_loss, loss_per_sample, \
         completion_op, update_commit, reset_op = setup_learning(args, in_var, root)
@@ -147,15 +169,21 @@ def train(args):
                 feed_dict = {in_var: image_batch, in_var.evidence: evidence_ind}
             if args.supervised:
                 feed_dict[labels_node] = labels_batch
-            if step == 0:
+            if epoch == args.num_epochs and args.export_completions:
                 if args.discrete:
                     feed_dict[truth] = image_batch
-                mpe_in_var_out, mosaic_summary_out, mosaic_out = sess.run(
-                    [completion_op, mosaic_summary, mosaic], feed_dict=feed_dict)
-                writer.add_summary(mosaic_summary_out, epoch)
-                reporter.write_image(
-                    np.squeeze(mosaic_out, axis=0), 'completion/epoch_{}_{}.png'.format(
-                        epoch, tag))
+                mpe_in_var_out = sess.run(completion_op, feed_dict=feed_dict)
+                # writer.add_summary(mosaic_summary_out, epoch)
+                # reporter.write_image(
+                #     np.squeeze(mosaic_out, axis=0), 'completion/epoch_{}_step_{}_{}.png'.format(
+                #         epoch, step, tag))
+                for i, (im, orig) in enumerate(zip(mpe_in_var_out, image_batch)):
+                    reporter.write_image(
+                        (im / 255.).reshape((num_rows, num_cols)), 'completion/completion_{}_{}.png'.format(
+                        i + (step + 1) * args.eval_batch_size, tag))
+                    reporter.write_image(
+                        (orig / 255.).reshape((num_rows, num_cols)), 'completion/original_{}_{}.png'.format(
+                            i + (step + 1) * args.eval_batch_size, tag))
             else:
                 mpe_in_var_out = sess.run(completion_op, feed_dict=feed_dict)
 
@@ -166,7 +194,13 @@ def train(args):
                 orig = image_batch
 
             l2 = np.square(orig - mpe_in_var_out)[completion_ind]
-            return np.mean(l2.reshape(len(orig), -1), axis=-1)
+
+            out = np.mean(l2.reshape(len(orig), -1), axis=-1)
+
+            if epoch == args.num_epochs and args.export_completions:
+                for err in out:
+                    reporter.write_line('completion_mse.csv', mse=err)
+            return out
 
         gm_default.add_task(
             "test_epoch.csv", fun=completion_bottom, iterator=test_iterator,
@@ -267,19 +301,27 @@ def build_spn(args, num_dims, num_vars, train_x, train_y):
                 'cauchy': CauchyLeaf,
                 'truncate': TruncatedNormalLeaf,
             }[args.dist]
-            if args.dist == "normal" and not args.equidistant_means:
-                kwargs = dict(initialization_data=train_x,
-                              estimate_scale=args.estimate_scale)
+
+            if args.dist in ["normal", "cauchy"] and not args.equidistant_means:
+                kwargs = dict(initialization_data=train_x)
             else:
                 kwargs = dict()
+
+            if args.dist == "normal":
+                kwargs['total_counts_init'] = args.total_counts_init
+
+            def equidistant_extremes():
+                z_transformed = (train_x - np.mean(train_x, axis=-1, keepdims=True)) / \
+                                np.std(train_x, axis=-1, keepdims=True)
+                return z_transformed.min(), z_transformed.max()
+
             in_var = LeafDist(
                 num_vars=num_vars, softplus_scale=softplus_scale,
                 num_components=args.num_components, trainable_scale=not args.fixed_variance,
                 scale_init=args.variance_init, trainable_loc=not args.fixed_mean,
                 share_scales=args.share_scales, share_locs_across_vars=args.share_locs,
-                loc_init=Equidistant(-1.5, 1.5) if args.normalize_data else Equidistant(),
+                loc_init=Equidistant(*equidistant_extremes()) if args.normalize_data else tf.initializers.truncated_normal(stddev=5e-1) if args.normalize_batch_wise else Equidistant(),
                 samplewise_normalization=args.normalize_data,
-                total_counts_init=args.total_counts_init,
                 **kwargs)
         else:
             LeafDist = {
@@ -317,20 +359,29 @@ def build_spn(args, num_dims, num_vars, train_x, train_y):
         'olivetti': 64,
         'caltech': 64
     }[args.dataset]
-    if args.dataset == 'cifar10' or args.first_local_sum:
+    if args.first_local_sum:
         in_var_ = spn.LocalSums(in_var, num_channels=args.sum_num_c0,
                                 spatial_dim_sizes=[edge_size, edge_size])
     else:
         in_var_ = in_var
 
     if args.supervised:
-        root, class_roots = wicker_convspn_two_non_overlapping(
-            in_var_, prod_num_channels, sum_num_channels, num_classes=num_classes, edge_size=edge_size,
-            first_depthwise=args.first_depthwise, supervised=args.supervised)
+        if args.conv_sums:
+            root, class_roots = wicker_convspn_two_non_overlapping_conv(
+                in_var_, prod_num_channels, sum_num_channels, num_classes=num_classes,
+                edge_size=edge_size,
+                first_depthwise=args.first_depthwise, supervised=args.supervised)
+        else:
+            root, class_roots = wicker_convspn_two_non_overlapping(
+                in_var_, prod_num_channels, sum_num_channels, num_classes=num_classes, edge_size=edge_size,
+                first_depthwise=args.first_depthwise, supervised=args.supervised)
+
     else:
         root, class_roots = full_wicker(
             in_var_, prod_num_channels, sum_num_channels, num_classes=num_classes,
-            edge_size=edge_size, first_depthwise=args.first_depthwise, supervised=args.supervised)
+            edge_size=edge_size, first_depthwise=args.first_depthwise, supervised=args.supervised,
+            depthwise=not args.not_depthwise)
+
     return in_var, root
 
 
@@ -381,7 +432,8 @@ def setup_learning(args, in_var, root):
             root, value_inference_type=inference_type,
             minimal_value_multiplier=args.minimal_value_multiplier, sample_winner=args.sample_path,
             sample_prob=args.sample_prob, unweighted=args.use_unweighted,
-            l0_prior_factor=args.l0_prior_factor, additive_smoothing=args.additive_smoothing)
+            l0_prior_factor=args.l0_prior_factor, additive_smoothing=args.additive_smoothing,
+            matmul_or_conv=args.use_unweighted)
 
         if args.update_period_unit is not None and not (
             args.update_period_unit == "step" and args.update_period_value == 1):
@@ -415,22 +467,30 @@ def setup_learning(args, in_var, root):
         marginalizing_root=root_marginalized, global_step=global_step,
         dropout_rate=args.dropout_rate)
 
+    weights = []
+    spn.traverse_graph(root, lambda node: weights.append(node.variable) if isinstance(node, spn.Weights) else None)
+
     optimizer = {
         'adam': lambda: tf.train.AdamOptimizer(learning_rate=args.learning_rate),
         'rmsprop': lambda: tf.train.RMSPropOptimizer(learning_rate=args.learning_rate),
         'amsgrad': lambda: AMSGrad(learning_rate=args.learning_rate),
+        'nadam': lambda: NDAdamOptimizer(
+            learning_rate=args.learning_rate, vec_axes={w: [-1] for w in weights})
     }[args.learning_algo]()
-    minimize_op, _ = learning.learn(
-        optimizer=optimizer, post_gradient_ops=not args.reparameterized_weights)
+
+    with tf.name_scope("Optimize"):
+        if args.exp_l2:
+            logger.info("Add exp l2 regularization")
+            loss = learning.loss() + exp_l2_regularization(args.exp_l2, root)
+        else:
+            loss = learning.loss()
+
+        minimize_op = optimizer.minimize(loss)
 
     logger.info("Settting up test loss")
     with tf.name_scope("DeterministicLoss"):
-        learning_deterministic = spn.GDLearning(
-            root, learning_task_type=spn.LearningTaskType.SUPERVISED if args.supervised else \
-                spn.LearningTaskType.UNSUPERVISED,
-            learning_method=learning_method, marginalizing_root=root_marginalized)
-        main_loss = learning_deterministic.loss()
-        loss_per_sample = learning_deterministic.loss(reduce_fn=lambda x: tf.reshape(x, (-1,)))
+        loss_per_sample = tf.negative(labels_llh - no_labels_llh)
+        main_loss = tf.reduce_mean(loss_per_sample)
 
     return correct, labels_node, main_loss, no_labels_llh, minimize_op, class_mpe, \
            no_op, loss_per_sample, in_var_mpe, no_op, no_op
@@ -456,7 +516,7 @@ def load_data(args):
     num_classes = train_y.max() + 1
 
     train_x, train_y = shuffle(train_x, train_y, random_state=1234)
-    test_x, test_y = shuffle(test_x, test_y, random_state=1234)
+    # test_x, test_y = shuffle(test_x, test_y, random_state=1234)
 
     if args.dist == "beta":
         train_x = np.clip(train_x, 0.01, 0.99)
@@ -506,11 +566,13 @@ def impainting_mosaic(reconstruction, truth, completion_indices, num_rows, batch
 
 if __name__ == "__main__":
     params = ArgumentParser()
+    params.add_argument("--conv_sums", action="store_true", dest="conv_sums")
+
     params.add_argument("--log_base_path", default='logs')
     params.add_argument("--name", default="convspn")
     params.add_argument("--batch_size", default=32, type=int)
     params.add_argument(
-        "--learning_algo", default='amsgrad', choices=['amsgrad', 'adam', 'rmsprop', 'em', 'soft_em'])
+        "--learning_algo", default='amsgrad', choices=['nadam', 'amsgrad', 'adam', 'rmsprop', 'em', 'soft_em'])
 
     params.add_argument("--total_counts_init", default=1.0, type=float)
     params.add_argument("--num_components", default=4, type=int)
@@ -566,6 +628,7 @@ if __name__ == "__main__":
                         default='normal')
     params.add_argument("--share_locs", action="store_true", dest="share_locs")
 
+
     # Augmentation
     params.add_argument("--rotation_range", default=0.0, type=float)
     params.add_argument("--horizontal_flip", action="store_true", dest="horizontal_flip")
@@ -594,8 +657,21 @@ if __name__ == "__main__":
     params.add_argument("--l0_prior_factor", type=float, default=0.0)
     params.add_argument("--dropout_rate", type=float, default=None)
 
+    params.add_argument('--normalize_batch_wise', dest='normalize_batch_wise', action='store_true')
+
+    params.add_argument("--equal_priors", dest='equal_priors', action='store_true')
+
+    params.add_argument("--exp_l2", default=None, type=float)
+
+    params.add_argument("--export_completions", action="store_true", dest="export_completions")
+
+    params.add_argument("--not_depthwise", action="store_true", dest="not_depthwise")
+
     params.add_argument(
-        "--reparameterized_weights", action="store_true", dest="reparameterize_weights")
+        "--reparameterized_weights", action="store_true", dest="reparameterized_weights")
+
+    params.add_argument(
+        "--equidistant_spread", default=3.0, type=float)
 
     params.set_defaults(discrete=False, predict_each_epoch=False,
                         uniform_priors=False, reparam_weights=False, sparse_range=True,
@@ -605,7 +681,9 @@ if __name__ == "__main__":
                         supervised=True, estimate_scale=False, only_root_marginalize=False,
                         normalize_data=False, tensor_spn=False, fixed_variance=False,
                         log_weights=False, equidistant_means=False, first_depthwise=False,
-                        sample_path=False, use_unweighted=False, reparameterized_weights=False)
+                        normalize_batch_wise=False, equal_priors=False,
+                        sample_path=False, use_unweighted=False, reparameterized_weights=False,
+                        conv_sums=False, export_completions=False, not_depthwise=False)
     args = params.parse_args()
     pprint.pprint(vars(args))
     train(args)
