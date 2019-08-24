@@ -44,8 +44,8 @@ class SoftEMLearning:
                 for w in weight_vars
             ]
 
-            acc_update = [tf.assign_add(a, wg) for a, wg in zip(accumulators_w, w_grads)]
-
+            acc_update = [tf.assign_add(a, wg / (tf.reduce_sum(wg, axis=1, keepdims=True) + 1e-8))
+                          for a, wg in zip(accumulators_w, w_grads)]
 
             with tf.control_dependencies(acc_update):
                 accumulators_decayed = [
